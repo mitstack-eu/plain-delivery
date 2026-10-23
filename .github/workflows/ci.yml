@@ -1,0 +1,74 @@
+name: ci
+
+# Every pull request runs the tests and the key gate, and every push to main
+# records the board keys it delivered, each with this repository's own commands.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["ubicloud-standard-2"]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.8'
+      - run: go vet ./...
+      - run: go test ./...
+
+  pr-key-gate:
+    name: pr key gate
+    if: github.event_name == 'pull_request'
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["ubicloud-standard-2"]') }}
+    steps:
+      # The base..head range needs history a shallow checkout has not.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.8'
+      # The title and shas come through the environment, since a pull request's title is text its author controls.
+      - name: Gate the pull request on a board key
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: go run ./cmd/pr-keys --repo . --base "$BASE_SHA" --head "$HEAD_SHA"
+
+  record-delivery:
+    name: record delivery
+    needs: test
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["ubicloud-standard-2"]') }}
+    # It pushes the board-synced anchor tag it advances, with the credential the checkout keeps.
+    permissions:
+      contents: write
+    # Two close pushes would otherwise read the same anchor and race its advance.
+    concurrency:
+      group: record-delivery
+      cancel-in-progress: false
+    steps:
+      # Range resolution reads the board-synced tag and history a shallow checkout has neither.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: '1.26.8'
+      - name: Record this push's delivered board keys
+        env:
+          TRACKER_BASE_URL: ${{ vars.TRACKER_BASE_URL }}
+          TRACKER_API_TOKEN: ${{ secrets.TRACKER_API_TOKEN }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: go run ./cmd/board-delivery --repo . --before "$BEFORE_SHA" --after "$GITHUB_SHA"
