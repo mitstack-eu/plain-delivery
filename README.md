@@ -57,9 +57,9 @@ silently skipped the board would look the same as one that reached it. The
 token in `TRACKER_API_TOKEN` is sent as a bearer token, and any board answer
 the command prints has that token redacted.
 
-The workspace runbook `docs/kit-delivery-recorder-credential.md` in
-mitstack-eu/mitstack-workspace says where those two values come from and how
-the token is rotated.
+The runbook `docs/kit-delivery-recorder-credential.md` in
+mitstack-eu/mitstack-workspace, a repository private to mitstack, says where
+those two values come from and how the token is rotated.
 
 ## How a repository runs the commands
 
@@ -97,6 +97,8 @@ then moves its pin by editing its own `.github/workflows/ci.yml`.
 go vet ./... && go test ./...
 ```
 
-The module uses the standard library alone. `ci_test.go` reads
+The module's one dependency is block-kit's `safe` package, which redacts the
+token from a board answer and keeps it on one line. `go.mod` pins block-kit to
+one commit, so a bump is an edit there. `ci_test.go` reads
 `.github/workflows/ci.yml` and fails when a job stops running these commands
 the way the sections above describe.

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"regexp"
 	"strings"
 
+	"github.com/mitstack-eu/block-kit/safe"
 	"github.com/mitstack-eu/plain-delivery/boardkeys"
 )
 
@@ -51,7 +51,7 @@ func Run(args []string, stdout io.Writer) int {
 	token := os.Getenv("TRACKER_API_TOKEN")
 
 	if err := postDelivered(baseURL, token, *after, keys); err != nil {
-		fmt.Fprintf(stdout, "board-delivery: %s\n", logSafe(err.Error(), token))
+		fmt.Fprintf(stdout, "board-delivery: %s\n", safe.LogSafe(err.Error(), token))
 		return 1
 	}
 
@@ -74,16 +74,4 @@ func deliveredKeys(repo, rng string) ([]string, error) {
 		perCommit[i] = boardkeys.Message(c.Subject, c.Body)
 	}
 	return boardkeys.Merge(perCommit...), nil
-}
-
-var controlChar = regexp.MustCompile(`[\x00-\x1f\x7f]`)
-
-// logSafe redacts the token, then turns line breaks into spaces and drops other control characters, so a board answer can neither leak the token nor forge a log line.
-func logSafe(s, token string) string {
-	if len(token) >= 4 {
-		s = strings.ReplaceAll(s, token, "[REDACTED]")
-	}
-	s = strings.ReplaceAll(s, "\r", " ")
-	s = strings.ReplaceAll(s, "\n", " ")
-	return controlChar.ReplaceAllString(s, "")
 }
