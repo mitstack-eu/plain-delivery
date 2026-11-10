@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/mitstack-eu/plain-delivery/internal/boardhttp"
 )
 
 var errNoBoard = errors.New("no board to read, since TRACKER_BASE_URL is unset")
@@ -33,24 +34,15 @@ func boardStatuses(baseURL, token string) statusReader {
 	}
 }
 
-// askBoard sends no Authorization header for an empty token, and a non-2xx error carries the board's answer.
 func askBoard(baseURL, token string, keys []string) (map[string]string, error) {
 	query := url.Values{"keys": {strings.Join(keys, ",")}, "fields": {"status"}}
 	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(baseURL, "/")+"/v1/issues?"+query.Encode(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("building the request: %w", err)
 	}
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-	resp, err := http.DefaultClient.Do(req)
+	raw, err := boardhttp.Send(req, token, "asking for "+strings.Join(keys, ", "))
 	if err != nil {
-		return nil, fmt.Errorf("asking for %s: %w", strings.Join(keys, ", "), err)
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("board returned %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		return nil, err
 	}
 	var list issueList
 	if err := json.Unmarshal(raw, &list); err != nil {

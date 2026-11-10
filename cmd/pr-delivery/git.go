@@ -1,11 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
-	"os/exec"
 	"slices"
 	"strings"
+
+	"github.com/mitstack-eu/plain-delivery/internal/gitcmd"
 )
 
 // shortSHA is how many hex characters name a commit in a message.
@@ -39,17 +39,7 @@ func (c commit) pathsOf(class pathClass) string {
 	return strings.Join(out, ", ")
 }
 
-func gitOutput(repo string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = repo
-	var out, errOut bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &errOut
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(errOut.String()))
-	}
-	return out.String(), nil
-}
+var gitOutput = gitcmd.Output
 
 // readCommits reads merge-base(base, head)..head oldest first, leaving out merge commits, whose diff is two branches' union rather than one author's commit.
 func readCommits(repo, base, head string) ([]commit, error) {
@@ -85,8 +75,7 @@ func readCommit(repo, sha string) (commit, error) {
 	return commit{SHA: sha, Subject: subject, Body: body, Paths: classifyRaw(raw)}, nil
 }
 
-// classifyRaw reads `git diff-tree --raw -z`: a ":<old mode> <new mode> <old sha> <new sha> <status>" field, then the path, or the old and new path for a rename or copy.
-// -z keeps a path with an unusual byte unquoted, so the suffix rules still match it.
+// classifyRaw reads `git diff-tree --raw -z`, whose -z keeps an unusual path unquoted: a ":<old mode> <new mode> <old sha> <new sha> <status>" field, then the path, or the old and new path for a rename or copy.
 func classifyRaw(raw string) map[string]pathClass {
 	paths := map[string]pathClass{}
 	fields := strings.Split(raw, "\x00")

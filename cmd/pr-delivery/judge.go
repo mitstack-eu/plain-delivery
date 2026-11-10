@@ -11,7 +11,6 @@ import (
 var claimedStatuses = []string{"In Progress", "Pull Request"}
 
 // judgeOrder fails code that lands before the first test commit, a commit carrying both halves, and code with no test at all.
-// Git history is the only record of that order a pull request carries, so the rule reads it rather than the author's word.
 func judgeOrder(commits []commit) []string {
 	var failures []string
 	firstSeen, anyTest, anyCode := false, false, false
@@ -38,17 +37,16 @@ func judgeOrder(commits []commit) []string {
 // statusReader answers each key's board status, leaving out a key the board does not hold.
 type statusReader func(keys []string) (map[string]string, error)
 
-// judgeKeys fails a title or a range that names no key, and a key the board does not hold as claimed.
-// A merge or rebase lands the commits and a squash lands the title, so both must name a key.
+// judgeKeys fails a title or a range that names no key, since a squash lands the title and a rebase the commits, and a key the board does not hold as claimed.
 func judgeKeys(title string, commits []commit, read statusReader) []string {
 	var failures []string
-	titleKeys := namedKeys(title, "")
+	titleKeys := boardkeys.Named(title, "")
 	if len(titleKeys) == 0 {
 		failures = append(failures, "the title names no board key")
 	}
 	var commitKeys []string
 	for _, c := range commits {
-		commitKeys = boardkeys.Merge(commitKeys, namedKeys(c.Subject, c.Body))
+		commitKeys = boardkeys.Merge(commitKeys, boardkeys.Named(c.Subject, c.Body))
 	}
 	if len(commitKeys) == 0 {
 		failures = append(failures, "no commit names a board key")
@@ -71,9 +69,4 @@ func judgeKeys(title string, commits []commit, read statusReader) []string {
 		}
 	}
 	return failures
-}
-
-// namedKeys returns the keys a subject or title delivers or references, since a change whose issue needs a release elsewhere only references it.
-func namedKeys(subject, body string) []string {
-	return boardkeys.Merge(boardkeys.Message(subject, body), boardkeys.References(subject, body))
 }

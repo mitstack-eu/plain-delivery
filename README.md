@@ -2,8 +2,8 @@
 
 This repository holds the commands that connect mitstack's repositories to
 the board, Plain, the work tracker where every piece of work is an issue with
-a key such as `MIT-123`. One command gates a pull request on a board key, and
-the other records on the board which issues a push to `main` delivered. This
+a key such as `MIT-123`. Two commands judge a pull request before it merges,
+and a third records on the board which issues a push to `main` delivered. This
 page is for the mitstack engineer who maintains those commands or the CI that
 runs them.
 
@@ -61,28 +61,37 @@ table in `cmd/pr-delivery/classify.go`.
 The check fails in three cases. The first commit to change a test or code
 changes code alone. One commit changes a test and code together. Code changes
 while no commit changes a test. A change of Markdown or pins alone has no
-test commit and passes. A pure rename counts as neither half, since it moves
-no assertion.
+test commit and passes. A file moved with no edit counts as neither a test
+nor code, since it changes no behaviour and no assertion.
 
 The second rule takes every key the title and the commits name, delivering or
 referencing, as `pr-keys` reads them. The title and at least one commit must
 each name one. The command then asks the board for each key's status in one
 `GET /v1/issues?keys=...&fields=status` request, and passes only a key that is
 `In Progress` or `Pull Request`. A key the board does not hold fails, and so
-does one in `Ready`, `Done` or `Removed`, by name and status. A run with no
+does one in any other status, such as `Backlog`, `Ready`, `Done` or
+`Removed`, by name and status. A run with no
 `TRACKER_BASE_URL` fails too, because no board can then say the key is
 claimed.
 
-A pull request a GitHub App opened, such as a Dependabot bump or a pin bump,
-has no board issue behind it. The workflow passes the author's account type
-from the event as `PR_AUTHOR_TYPE`, and for `Bot` the command asks the board
-nothing. Its commit order is still judged. An agent pushing with a person's
-token cannot open a pull request as an App, so this is no door around the
-board.
+A pull request a GitHub App opened has no board issue behind it. Examples
+are a Dependabot bump and a pin bump, the platform's automatic pull request
+that moves a block to its new release. The workflow passes the author's
+account type from the event as `PR_AUTHOR_TYPE`. For `Bot`, the command
+judges neither the keys the title and commits name nor their status, and
+asks the board nothing, while it still judges the commit order. Any other
+value, an unset one included, is judged in full. An agent pushing with a
+person's token cannot open a pull request as an App, so this is no door
+around the board.
+
+Run it on a branch before you open its pull request, with the board address
+and token from your environment. `origin/main` stands for the base the pull
+request will target:
 
 ```sh
-PR_TITLE="MIT-123: fix the thing" PR_AUTHOR_TYPE=User \
-  go run ./cmd/pr-delivery --repo . --base "$BASE_SHA" --head "$HEAD_SHA"
+TRACKER_BASE_URL=https://plain.apps.mitstack.dev TRACKER_API_TOKEN=... \
+PR_TITLE="MIT-123: fix the thing" \
+  go run ./cmd/pr-delivery --repo . --base origin/main --head HEAD
 ```
 
 A failing run prints one line per failure, such as
@@ -119,15 +128,15 @@ change only when it edits that pin. board-automation and plain-block install
 go install github.com/mitstack-eu/plain-delivery/cmd/board-delivery@v0.1.0
 ```
 
-talos-cluster-kit runs both of the first two commands with `go run` at the
-same pin, and block-kit runs `board-delivery` the same way:
+talos-cluster-kit runs `pr-keys` and `board-delivery` with `go run` at the
+same pin:
 
 ```sh
 go run github.com/mitstack-eu/plain-delivery/cmd/pr-keys@v0.1.0 --repo . --base "$BASE_SHA" --head "$HEAD_SHA"
 go run github.com/mitstack-eu/plain-delivery/cmd/board-delivery@v0.1.0 --repo . --before "$BEFORE_SHA" --after "$GITHUB_SHA"
 ```
 
-`pr-delivery` runs with `go run` at a release tag in four places: block-kit's
+`pr-delivery` is built to run with `go run` at a release tag from block-kit's
 own `ci.yml`, block-kit's reusable `publish-block.yml` for every block that
 calls it, the platform pipeline and the workspace pipeline. Each passes
 `TRACKER_BASE_URL` and `TRACKER_API_TOKEN` through the environment, as

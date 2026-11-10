@@ -26,8 +26,7 @@ type classRule struct {
 	basename []string
 }
 
-// classRules is the one table of path classes, read top to bottom, so a doc or pin under a test directory stays other.
-// Docs ship with the code they describe, and a pin or dependency file moves a version and carries no logic a test could pin.
+// classRules is the one table of path classes, read top to bottom, so a doc or pin under a test directory stays other, since it carries no logic a test could pin.
 var classRules = []classRule{
 	{
 		class:    classOther,

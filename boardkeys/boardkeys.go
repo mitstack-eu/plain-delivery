@@ -33,6 +33,11 @@ func References(subject, body string) []string {
 	return Merge(keyPattern.FindAllString(refsGroup.FindString(subject), -1), trailerKeys(refsTrailer, body))
 }
 
+// Named returns every key a commit or title names, delivering or referencing, since a change whose issue needs a release elsewhere only references it.
+func Named(subject, body string) []string {
+	return Merge(Message(subject, body), References(subject, body))
+}
+
 // Merge combines key lists, deduplicated and sorted by the number after the hyphen, so the tenth key follows the ninth.
 func Merge(sets ...[]string) []string {
 	var all []string
