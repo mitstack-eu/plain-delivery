@@ -15,6 +15,12 @@ import (
 
 const boardToken = "test-board-token"
 
+// The logins GitHub gives the two Apps that open mitstack pull requests with no board issue behind them.
+const (
+	dependabotApp = "dependabot[bot]"
+	pinBumpApp    = "mitstack-ci[bot]"
+)
+
 // step is one commit: rename moves a file first, keeping or appending to its body, then each path is written, or, for a gitlink step, pointed at the seed commit as a submodule.
 type step struct {
 	paths      []string
@@ -125,7 +131,7 @@ func TestRun(t *testing.T) {
 		// wantLine is one line the output must hold, with @N standing for the twelve-character sha of step N.
 		wantLine string
 	}{
-		{"a person's test commit and then its code under an In Progress key passes", "MIT-12: fix", "User",
+		{"a person's test commit and then its code under an In Progress key passes", "MIT-12: fix", "octocat",
 			[]step{{paths: []string{"api/run_test.go"}}, {paths: []string{"api/run.go"}}}, inProgress, 0, ""},
 		{"a key in Pull Request passes", "MIT-12: fix", "",
 			[]step{{paths: []string{"api/run_test.go"}}, {paths: []string{"api/run.go"}}}, map[string]string{"MIT-12": "Pull Request"}, 0, ""},
@@ -164,12 +170,21 @@ func TestRun(t *testing.T) {
 			[]step{{paths: []string{"README.md"}, subject: "fix the thing"}}, inProgress, 1, "pr-delivery: no commit names a board key"},
 		{"no board address fails, since no board can say the key is claimed", "MIT-12: fix", "",
 			[]step{{paths: []string{"README.md"}}}, nil, 1, "pr-delivery: no board to read, since TRACKER_BASE_URL is unset"},
-		{"a GitHub App's keyless submodule pin move passes and reads no board", "chore: bump platform submodule", "Bot",
+		{"the pin-bump App's keyless submodule pin move passes and reads no board", "chore: bump platform submodule", pinBumpApp,
 			[]step{{paths: []string{"platform"}, subject: "chore: bump platform submodule", gitlink: true}}, map[string]string{}, 0,
-			"pr-delivery: the author is a GitHub App, so the board is not asked about its keys"},
-		{"a GitHub App's code before its test still fails", "chore: bump", "Bot",
+			"pr-delivery: mitstack-ci[bot] is a GitHub App on the keyless list, so the board is not asked about its keys"},
+		{"Dependabot's keyless module bump passes and reads no board", "gomod(deps): bump the go-all group in /api", dependabotApp,
+			[]step{{paths: []string{"api/go.mod", "api/go.sum"}, subject: "gomod(deps): bump the go-all group in /api"}}, map[string]string{}, 0,
+			"pr-delivery: dependabot[bot] is a GitHub App on the keyless list, so the board is not asked about its keys"},
+		{"a listed App's code before its test still fails", "chore: bump", dependabotApp,
 			[]step{{paths: []string{"api/run.go"}, subject: "chore: bump"}, {paths: []string{"api/run_test.go"}, subject: "chore: test"}}, nil, 1,
 			`pr-delivery: code came before its tests: commit @0 "chore: bump" changes code first: api/run.go`},
+		{"an App off the list fails without a key", "chore: bump platform submodule", "renovate[bot]",
+			[]step{{paths: []string{"platform"}, subject: "chore: bump platform submodule", gitlink: true}}, nil, 1,
+			"pr-delivery: the title names no board key"},
+		{"a person fails without a key", "chore: bump platform submodule", "octocat",
+			[]step{{paths: []string{"platform"}, subject: "chore: bump platform submodule", gitlink: true}}, nil, 1,
+			"pr-delivery: the title names no board key"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -182,7 +197,7 @@ func TestRun(t *testing.T) {
 				url, requests = fakeBoard(t, tc.board)
 				t.Setenv("TRACKER_BASE_URL", url)
 			}
-			t.Setenv("PR_AUTHOR_TYPE", tc.author)
+			t.Setenv("PR_AUTHOR", tc.author)
 			args := []string{"--repo", dir, "--base", base, "--head", shas[len(shas)-1], "--title", tc.title}
 
 			var out bytes.Buffer
@@ -196,10 +211,11 @@ func TestRun(t *testing.T) {
 			if code != tc.wantCode || (want != "" && !slices.Contains(lines, want)) {
 				t.Errorf("Run(%q) = %d; want %d and the line %q\noutput:\n%s", args, code, tc.wantCode, want, out.String())
 			}
-			if tc.author == "Bot" && *requests != 0 {
-				t.Errorf("a GitHub App's pull request asked the board %d time(s); want none", *requests)
+			listedApp := tc.author == dependabotApp || tc.author == pinBumpApp
+			if listedApp && *requests != 0 {
+				t.Errorf("%s's pull request asked the board %d time(s); want none", tc.author, *requests)
 			}
-			if tc.author != "Bot" && tc.board != nil && *requests != 1 {
+			if !listedApp && tc.board != nil && *requests != 1 {
 				t.Errorf("a person's pull request asked the board %d time(s); want one request for every key", *requests)
 			}
 		})
