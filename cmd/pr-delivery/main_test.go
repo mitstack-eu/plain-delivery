@@ -1,0 +1,211 @@
+package main
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strings"
+	"testing"
+)
+
+const boardToken = "test-board-token"
+
+// step is one commit: each path is written, or, for a gitlink step, pointed at the seed commit as a submodule.
+type step struct {
+	paths   []string
+	subject string
+	gitlink bool
+}
+
+func runGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-c", "user.email=test@example.com", "-c", "user.name=test"}, args...)...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// newRange commits a seed and then each step, returning the directory, the seed sha and each step's sha.
+func newRange(t *testing.T, steps []step) (dir, base string, shas []string) {
+	t.Helper()
+	dir = t.TempDir()
+	runGit(t, dir, "init", "-q")
+	runGit(t, dir, "commit", "--allow-empty", "-q", "-m", "seed")
+	base = runGit(t, dir, "rev-parse", "HEAD")
+	for i, s := range steps {
+		for _, p := range s.paths {
+			if s.gitlink {
+				runGit(t, dir, "update-index", "--add", "--cacheinfo", "160000,"+base+","+p)
+				continue
+			}
+			full := filepath.Join(dir, p)
+			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(full, []byte(s.subject+p), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			runGit(t, dir, "add", p)
+		}
+		subject := s.subject
+		if subject == "" {
+			subject = "MIT-12: step " + string(rune('a'+i))
+		}
+		runGit(t, dir, "commit", "-q", "-m", subject)
+		shas = append(shas, runGit(t, dir, "rev-parse", "HEAD"))
+	}
+	return dir, base, shas
+}
+
+// fakeBoard answers the issue list route for the keys it holds, refusing a request without the board token, and counts its requests.
+func fakeBoard(t *testing.T, statuses map[string]string) (url string, requests *int) {
+	t.Helper()
+	requests = new(int)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		*requests++
+		if r.URL.Path != "/v1/issues" || r.URL.Query().Get("fields") != "status" || r.Header.Get("Authorization") != "Bearer "+boardToken {
+			http.Error(w, "unexpected request "+r.URL.String(), http.StatusUnauthorized)
+			return
+		}
+		issues := []map[string]string{}
+		for _, k := range strings.Split(r.URL.Query().Get("keys"), ",") {
+			if s, ok := statuses[k]; ok {
+				issues = append(issues, map[string]string{"id": k, "status": s})
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"issues": issues})
+	}))
+	t.Cleanup(srv.Close)
+	return srv.URL, requests
+}
+
+func TestRun(t *testing.T) {
+	inProgress := map[string]string{"MIT-12": "In Progress"}
+	pinFiles := []string{
+		"blocks/pins/managed-ci.yaml", "api/internal/seed/pins.yaml", "api/internal/seed/manifests/managed-ci-block.yaml",
+		"app/src/proto/fixtures/seededBlockFacts.json", "scripts/resolve-block-images_test.sh",
+	}
+	cases := []struct {
+		name, title, author string
+		steps               []step
+		board               map[string]string
+		wantCode            int
+		// wantLine is one line the output must hold, with @N standing for the twelve-character sha of step N.
+		wantLine string
+	}{
+		{"a test commit and then its code under an In Progress key passes", "MIT-12: fix", "",
+			[]step{{paths: []string{"api/run_test.go"}}, {paths: []string{"api/run.go"}}}, inProgress, 0, ""},
+		{"a key in Pull Request passes", "MIT-12: fix", "",
+			[]step{{paths: []string{"api/run_test.go"}}, {paths: []string{"api/run.go"}}}, map[string]string{"MIT-12": "Pull Request"}, 0, ""},
+		{"Go code committed before its test fails naming the code commit", "MIT-12: fix", "",
+			[]step{{paths: []string{"api/run.go"}}, {paths: []string{"api/run_test.go"}}}, inProgress, 1,
+			`pr-delivery: code came before its tests: commit @0 "MIT-12: step a" changes code first: api/run.go`},
+		{"a commit changing a test and code together fails naming both", "MIT-12: fix", "",
+			[]step{{paths: []string{"api/run_test.go", "api/run.go"}}}, inProgress, 1,
+			`pr-delivery: commit @0 "MIT-12: step a" changes a test and code together: tests api/run_test.go; code api/run.go`},
+		{"code with no test fails", "MIT-12: fix", "",
+			[]step{{paths: []string{"api/run.go"}}}, inProgress, 1,
+			"pr-delivery: the code this pull request changes has no test, since no commit changes a test file"},
+		{"Markdown alone under a claimed key passes with no test commit", "MIT-12: docs", "",
+			[]step{{paths: []string{"README.md", "docs/flow.md"}}}, inProgress, 0, ""},
+		{"a pin bump changing only pin files under a claimed key passes", "MIT-12: pin managed-ci to 2.21.0", "",
+			[]step{{paths: pinFiles}}, inProgress, 0, ""},
+		{"a key the board does not hold fails naming it", "MIT-12: fix", "",
+			[]step{{paths: []string{"README.md"}}}, map[string]string{}, 1, "pr-delivery: MIT-12 is not an issue on the board"},
+		{"a key in Ready fails naming its status", "MIT-12: fix", "",
+			[]step{{paths: []string{"README.md"}}}, map[string]string{"MIT-12": "Ready"}, 1,
+			"pr-delivery: MIT-12 is Ready on the board, and a pull request may name only an issue that is In Progress or Pull Request"},
+		{"a key in Done fails naming its status", "MIT-12: fix", "",
+			[]step{{paths: []string{"README.md"}}}, map[string]string{"MIT-12": "Done"}, 1,
+			"pr-delivery: MIT-12 is Done on the board, and a pull request may name only an issue that is In Progress or Pull Request"},
+		{"a key moved to Removed before a rerun fails naming its new status", "update the thing (refs MIT-12)", "",
+			[]step{{paths: []string{"README.md"}, subject: "update the thing (refs MIT-12)"}}, map[string]string{"MIT-12": "Removed"}, 1,
+			"pr-delivery: MIT-12 is Removed on the board, and a pull request may name only an issue that is In Progress or Pull Request"},
+		{"a title naming no key fails", "fix the thing", "",
+			[]step{{paths: []string{"README.md"}}}, inProgress, 1, "pr-delivery: the title names no board key"},
+		{"commits naming no key fail", "MIT-12: fix", "",
+			[]step{{paths: []string{"README.md"}, subject: "fix the thing"}}, inProgress, 1, "pr-delivery: no commit names a board key"},
+		{"no board address fails, since no board can say the key is claimed", "MIT-12: fix", "",
+			[]step{{paths: []string{"README.md"}}}, nil, 1, "pr-delivery: no board to read, since TRACKER_BASE_URL is unset"},
+		{"a GitHub App's keyless submodule pin move passes and reads no board", "chore: bump platform submodule", "Bot",
+			[]step{{paths: []string{"platform"}, subject: "chore: bump platform submodule", gitlink: true}}, map[string]string{}, 0,
+			"pr-delivery: the author is a GitHub App, so the board is not asked about its keys"},
+		{"a GitHub App's code before its test still fails", "chore: bump", "Bot",
+			[]step{{paths: []string{"api/run.go"}, subject: "chore: bump"}, {paths: []string{"api/run_test.go"}, subject: "chore: test"}}, nil, 1,
+			`pr-delivery: code came before its tests: commit @0 "chore: bump" changes code first: api/run.go`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir, base, shas := newRange(t, tc.steps)
+			t.Setenv("TRACKER_BASE_URL", "")
+			t.Setenv("TRACKER_API_TOKEN", boardToken)
+			requests := new(int)
+			if tc.board != nil {
+				var url string
+				url, requests = fakeBoard(t, tc.board)
+				t.Setenv("TRACKER_BASE_URL", url)
+			}
+			t.Setenv("PR_AUTHOR_TYPE", tc.author)
+			args := []string{"--repo", dir, "--base", base, "--head", shas[len(shas)-1], "--title", tc.title}
+
+			var out bytes.Buffer
+			code := Run(args, &out)
+
+			want := tc.wantLine
+			for i, sha := range shas {
+				want = strings.ReplaceAll(want, "@"+string(rune('0'+i)), sha[:12])
+			}
+			lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+			if code != tc.wantCode || (want != "" && !slices.Contains(lines, want)) {
+				t.Errorf("Run(%q) = %d; want %d and the line %q\noutput:\n%s", args, code, tc.wantCode, want, out.String())
+			}
+			if tc.author == "Bot" && *requests != 0 {
+				t.Errorf("a GitHub App's pull request asked the board %d time(s); want none", *requests)
+			}
+		})
+	}
+}
+
+func TestRun_FailsWithTheBoardsAnswerAndTheTokenRedacted(t *testing.T) {
+	dir, base, shas := newRange(t, []step{{paths: []string{"README.md"}}})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "down for "+boardToken, http.StatusInternalServerError)
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("TRACKER_BASE_URL", srv.URL)
+	t.Setenv("TRACKER_API_TOKEN", boardToken)
+
+	var out bytes.Buffer
+	code := Run([]string{"--repo", dir, "--base", base, "--head", shas[0], "--title", "MIT-12: fix"}, &out)
+
+	want := "pr-delivery: reading the board: board returned 500: down for [REDACTED]"
+	if code != 1 || !slices.Contains(strings.Split(strings.TrimSpace(out.String()), "\n"), want) {
+		t.Errorf("Run = %d; want 1 and the line %q\noutput:\n%s", code, want, out.String())
+	}
+}
+
+func TestRun_ExitsTwoOnAMissingRangeFlag(t *testing.T) {
+	for _, omit := range []string{"--base", "--head"} {
+		var args []string
+		for _, f := range [][2]string{{"--base", "a"}, {"--head", "b"}} {
+			if f[0] != omit {
+				args = append(args, f[:]...)
+			}
+		}
+
+		var out bytes.Buffer
+		code := Run(args, &out)
+
+		if want := "pr-delivery: " + omit + " is required\n"; code != 2 || out.String() != want {
+			t.Errorf("Run(%q) = %d, %q; want 2, %q", args, code, out.String(), want)
+		}
+	}
+}
