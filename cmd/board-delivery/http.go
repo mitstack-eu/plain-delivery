@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
+
+	"github.com/mitstack-eu/plain-delivery/internal/boardhttp"
 )
 
 type deliveryRecord struct {
@@ -13,7 +14,6 @@ type deliveryRecord struct {
 	Keys     []string `json:"keys"`
 }
 
-// postDelivered sends no Authorization header for an empty token, and a non-2xx error carries the board's answer verbatim.
 func postDelivered(baseURL, token, delivery string, keys []string) error {
 	body, err := json.Marshal(deliveryRecord{Delivery: delivery, Keys: keys})
 	if err != nil {
@@ -24,18 +24,6 @@ func postDelivered(baseURL, token, delivery string, keys []string) error {
 		return fmt.Errorf("building request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if token != "" {
-		req.Header.Set("Authorization", "Bearer "+token)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("posting delivery: %w", err)
-	}
-	defer resp.Body.Close()
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("board returned %d: %s", resp.StatusCode, raw)
-	}
-	return nil
+	_, err = boardhttp.Send(req, token, "posting delivery")
+	return err
 }

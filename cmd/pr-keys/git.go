@@ -1,10 +1,9 @@
 package main
 
 import (
-	"bytes"
-	"fmt"
-	"os/exec"
 	"strings"
+
+	"github.com/mitstack-eu/plain-delivery/internal/gitcmd"
 )
 
 // Neither separator byte appears in ordinary commit text.
@@ -13,17 +12,7 @@ const (
 	commitRecordSep = "\x1e"
 )
 
-func gitOutput(repo string, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
-	cmd.Dir = repo
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-	if err := cmd.Run(); err != nil {
-		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(out.String()))
-	}
-	return strings.TrimSpace(out.String()), nil
-}
+var gitOutput = gitcmd.Output
 
 // commitsInRange reads every commit's subject and body in rng.
 func commitsInRange(repo, rng string) ([]commit, error) {

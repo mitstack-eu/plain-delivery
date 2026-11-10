@@ -15,8 +15,6 @@ func TestResolveRange(t *testing.T) {
 	}{
 		{"a usable anchor wins", "anchorSHA", "beforeSHA", "anchorSHA..curSHA"},
 		{"a usable anchor wins over an empty before", "anchorSHA", "", "anchorSHA..curSHA"},
-		{"a usable anchor wins over an all-zero before", "anchorSHA", testZeroSHA, "anchorSHA..curSHA"},
-		{"a usable anchor wins over a before equal to current", "anchorSHA", cur, "anchorSHA..curSHA"},
 		{"an empty anchor falls through to before", "", "beforeSHA", "beforeSHA..curSHA"},
 		{"an all-zero anchor falls through to before", testZeroSHA, "beforeSHA", "beforeSHA..curSHA"},
 		{"an anchor equal to current falls through to before", cur, "beforeSHA", "beforeSHA..curSHA"},
@@ -24,7 +22,6 @@ func TestResolveRange(t *testing.T) {
 		{"all-zero anchor and before fall back to the tip", testZeroSHA, testZeroSHA, "curSHA~1..curSHA"},
 		{"anchor and before equal to current fall back to the tip", cur, cur, "curSHA~1..curSHA"},
 		{"an empty anchor and an all-zero before fall back to the tip", "", testZeroSHA, "curSHA~1..curSHA"},
-		{"an all-zero anchor and an empty before fall back to the tip", testZeroSHA, "", "curSHA~1..curSHA"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

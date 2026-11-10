@@ -37,7 +37,6 @@ func check(title string, commits []commit) error {
 	return fmt.Errorf("pr-keys: no board key in the pull request's %s", strings.Join(missing, " and "))
 }
 
-// A reference passes too, since a change whose ticket also needs a release elsewhere must leave the key open.
 func namesKey(subject, body string) bool {
-	return len(boardkeys.Message(subject, body)) > 0 || len(boardkeys.References(subject, body)) > 0
+	return len(boardkeys.Named(subject, body)) > 0
 }
