@@ -74,15 +74,17 @@ does one in any other status, such as `Backlog`, `Ready`, `Done` or
 `TRACKER_BASE_URL` fails too, because no board can then say the key is
 claimed.
 
-A pull request a GitHub App opened has no board issue behind it. Examples
-are a Dependabot bump and a pin bump, the platform's automatic pull request
-that moves a block to its new release. The workflow passes the author's
-account type from the event as `PR_AUTHOR_TYPE`. For `Bot`, the command
-judges neither the keys the title and commits name nor their status, and
-asks the board nothing, while it still judges the commit order. Any other
-value, an unset one included, is judged in full. An agent pushing with a
-person's token cannot open a pull request as an App, so this is no door
-around the board.
+Two GitHub Apps open pull requests with no board issue behind them:
+`dependabot[bot]`, which bumps dependencies, and `mitstack-ci[bot]`, which
+moves the workspace's platform submodule pin. They are listed by login in
+`keylessApps` in `cmd/pr-delivery/run.go`, the one place the list lives. The
+workflow passes the author's login from the event as `PR_AUTHOR`, or the
+command takes it as `--author`. For a listed login, the command judges
+neither the keys nor their status and asks the board nothing, while it still
+judges the commit order. Every other author is judged in full, another App
+included. GitHub gives a login ending in `[bot]` only to an App, so a person
+cannot open a pull request under a listed login. Adding an App to the list
+takes a change to that file, and no label, trailer or variable extends it.
 
 Run it on a branch before you open its pull request, with the board address
 and token from your environment. `origin/main` stands for the base the pull

@@ -6,12 +6,16 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 
 	"github.com/mitstack-eu/block-kit/safe"
 )
 
-// appAuthor is the account type GitHub gives a pull request a GitHub App opened, such as Dependabot or a pin bump, which no board issue stands behind.
-const appAuthor = "Bot"
+// keylessApps are the logins of the GitHub Apps whose pull requests no board issue stands behind; GitHub gives a "[bot]" login only to an App, so no person can take one.
+var keylessApps = []string{
+	"dependabot[bot]",  // Dependabot's dependency bumps
+	"mitstack-ci[bot]", // the workspace's platform pin bump
+}
 
 // Run judges the commits in merge-base(--base, --head)..--head and --title, writing every message to stdout and returning 2 on a bad flag, 1 on a failed check and 0 on a pass.
 func Run(args []string, stdout io.Writer) int {
@@ -21,7 +25,7 @@ func Run(args []string, stdout io.Writer) int {
 	base := fs.String("base", "", "the pull request's base sha")
 	head := fs.String("head", "", "the pull request's head sha")
 	title := fs.String("title", "", "the pull request's title (default: the PR_TITLE environment variable)")
-	authorType := fs.String("author-type", "", "the pull request author's GitHub account type (default: the PR_AUTHOR_TYPE environment variable)")
+	author := fs.String("author", "", "the pull request author's GitHub login (default: the PR_AUTHOR environment variable)")
 	if err := fs.Parse(args); err != nil {
 		fmt.Fprintln(stdout, err)
 		return 2
@@ -33,7 +37,7 @@ func Run(args []string, stdout io.Writer) int {
 		}
 	}
 	*title = valueOrEnv(*title, "PR_TITLE")
-	*authorType = valueOrEnv(*authorType, "PR_AUTHOR_TYPE")
+	*author = valueOrEnv(*author, "PR_AUTHOR")
 
 	commits, err := readCommits(*repo, *base, *head)
 	if err != nil {
@@ -42,8 +46,8 @@ func Run(args []string, stdout io.Writer) int {
 	}
 	failures := judgeOrder(commits)
 	token := os.Getenv("TRACKER_API_TOKEN")
-	if *authorType == appAuthor {
-		fmt.Fprintln(stdout, "pr-delivery: the author is a GitHub App, so the board is not asked about its keys")
+	if slices.Contains(keylessApps, *author) {
+		fmt.Fprintf(stdout, "pr-delivery: %s is a GitHub App on the keyless list, so the board is not asked about its keys\n", *author)
 	} else {
 		failures = append(failures, judgeKeys(*title, commits, boardStatuses(os.Getenv("TRACKER_BASE_URL"), token))...)
 	}
