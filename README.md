@@ -62,7 +62,9 @@ A workflow under `.github/workflows/` is code, with one exception that
 `classifyPatch` in `cmd/pr-delivery/classify.go` reads from the commit's
 patch. When every changed line is a `uses:` line, replaced one for one, and
 only the version after `@` and its trailing comment differ, the file counts as
-other, like a `go.sum` line. Dependabot's Actions bump changes exactly that:
+other, like a `go.sum` line. Dependabot's Actions bump changes exactly that,
+as in this illustration, whose hashes are placeholders rather than real
+releases:
 
 ```diff
 -      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v7.0.0
