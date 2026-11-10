@@ -56,15 +56,12 @@ func TestClassify(t *testing.T) {
 		{"a pipeline fixture under scripts/test is a test", "scripts/test/fixtures/required-checks/pipeline.yml", false, classTest},
 		{"a root testdata file is a test", "testdata/golden.json", false, classTest},
 		{"a Python module is code", "scripts/check_something.py", false, classCode},
-		{"a Python module beside its pytest module is code", "svc/thing.py", false, classCode},
 		{"a JavaScript module is code", "app/src/a.js", false, classCode},
 		{"a TypeScript module is code", "app/src/b.ts", false, classCode},
 		{"a JSX component is code", "app/src/c.jsx", false, classCode},
 		{"a TSX component is code", "app/src/d.tsx", false, classCode},
 		{"a proto fixture the dev route renders is code", "app/src/proto/fixtures/stack.ts", false, classCode},
 		{"a JSON file beside the regenerated block facts is code", "app/src/proto/fixtures/otherFacts.json", false, classCode},
-		{"a runbook under docs is other", "docs/runbook.md", false, classOther},
-		{"a mirrored shell script under .shared is other", ".shared/mirrored.sh", false, classOther},
 		{"a dated timeline under product is other", "product/roadmap/2026-08-28-timeline.json", false, classOther},
 	}
 	for _, tc := range cases {

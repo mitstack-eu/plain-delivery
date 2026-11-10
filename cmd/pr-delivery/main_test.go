@@ -141,12 +141,11 @@ func runClaimed(t *testing.T, dir, base, head string) (code int, out string) {
 
 func appendLine(t *testing.T, path string) {
 	t.Helper()
-	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	text, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
-	if _, err := f.WriteString("an edited line\n"); err != nil {
+	if err := os.WriteFile(path, append(text, "an edited line\n"...), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -383,12 +382,9 @@ func TestRun_FailsWithTheBoardsAnswerAndTheTokenRedacted(t *testing.T) {
 
 func TestRun_ExitsTwoOnAMissingRangeFlag(t *testing.T) {
 	for _, omit := range []string{"--base", "--head"} {
-		var args []string
-		for _, f := range [][2]string{{"--base", "a"}, {"--head", "b"}} {
-			if f[0] != omit {
-				args = append(args, f[:]...)
-			}
-		}
+		args := []string{"--base", "a", "--head", "b"}
+		i := slices.Index(args, omit)
+		args = slices.Delete(args, i, i+2)
 
 		var out bytes.Buffer
 		code := Run(args, &out)

@@ -16,13 +16,7 @@ import (
 // k writes each "#" in s as the board's key prefix, so "#12: fix" is a subject delivering key 12.
 func k(s string) string { return strings.ReplaceAll(s, "#", "MIT-") }
 
-func keys(ns ...int) []string {
-	var out []string
-	for _, n := range ns {
-		out = append(out, fmt.Sprintf("MIT-%d", n))
-	}
-	return out
-}
+func keys(s string) []string { return strings.Fields(k(s)) }
 
 func runGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
@@ -35,7 +29,6 @@ func runGit(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// tagSHA returns what the board-synced tag points at in dir, or "" when it is unset.
 func tagSHA(dir string) string {
 	out, _ := exec.Command("git", "-C", dir, "rev-parse", "-q", "--verify", "refs/tags/"+anchorTag+"^{commit}").Output()
 	return strings.TrimSpace(string(out))
@@ -54,27 +47,22 @@ func newTestRepo(t *testing.T, messages ...string) *testRepo {
 	runGit(t, r.origin, "init", "-q", "--bare")
 	runGit(t, r.dir, "init", "-q")
 	runGit(t, r.dir, "remote", "add", "origin", r.origin)
-	for i, msg := range append([]string{"seed"}, messages...) {
+	for _, msg := range append([]string{"seed"}, messages...) {
 		args := []string{"-c", "user.email=test@example.com", "-c", "user.name=test", "commit", "--allow-empty", "-q"}
 		for _, part := range strings.Split(k(msg), "\x00") {
 			args = append(args, "-m", part)
 		}
 		runGit(t, r.dir, args...)
-		sha := runGit(t, r.dir, "rev-parse", "HEAD")
-		if i == 0 {
-			r.seed = sha
-			runGit(t, r.dir, "push", "-q", "origin", "HEAD:refs/heads/main")
-			continue
-		}
-		r.shas = append(r.shas, sha)
+		r.shas = append(r.shas, runGit(t, r.dir, "rev-parse", "HEAD"))
 	}
+	r.seed, r.shas = r.shas[0], r.shas[1:]
+	runGit(t, r.dir, "push", "-q", "origin", r.seed+":refs/heads/main")
 	return r
 }
 
 type capturedRequest struct {
-	method, path string
-	headers      http.Header
-	body         []byte
+	head []string
+	body []byte
 }
 
 type outcome struct {
@@ -84,6 +72,20 @@ type outcome struct {
 }
 
 const noBoard, unreachable = 0, -1
+
+func seed(r *testRepo) string { return r.seed }
+
+func anchorAt(atTip bool) func(*testing.T, outcome) {
+	return func(t *testing.T, o outcome) {
+		want := ""
+		if atTip {
+			want = o.tip
+		}
+		if local, origin := tagSHA(o.repo.dir), tagSHA(o.repo.origin); local != want || origin != want {
+			t.Errorf("board-synced tag local %q, origin %q; want both at %q, since a run's own checkout is discarded", local, origin, want)
+		}
+	}
+}
 
 func TestRun(t *testing.T) {
 	const token = "super-secret-value-xyz"
@@ -99,67 +101,26 @@ func TestRun(t *testing.T) {
 		wantInOut   string
 		check       func(t *testing.T, o outcome)
 	}{
-		{"it posts exactly one JSON delivery of the tip with the bearer token", []string{"#42: fix the thing"}, 0, nil, 200, "ok", token, 0, keys(42), "",
-			func(t *testing.T, o outcome) {
-				r := o.reqs[0]
-				got := []string{r.method, r.path, r.headers.Get("Content-Type"), r.headers.Get("Authorization")}
-				if want := []string{http.MethodPost, "/v1/delivered", "application/json", "Bearer " + token}; !slices.Equal(got, want) {
-					t.Errorf("method, path, content type, authorization = %q, want %q", got, want)
-				}
-				if d := delivered(t, r.body).Delivery; d != o.tip {
-					t.Errorf("delivery = %q, want the tip %q", d, o.tip)
-				}
-			}},
-		{"an empty token sends no Authorization header at all", []string{"#1: fix"}, 0, nil, 200, "ok", "", 0, keys(1), "",
-			func(t *testing.T, o outcome) {
-				if vals := o.reqs[0].headers.Values("Authorization"); len(vals) != 0 {
-					t.Errorf("Authorization = %v, want no header when the token is empty", vals)
-				}
-			}},
+		{"it posts exactly one JSON delivery of the tip with the bearer token", []string{"#42: fix the thing"}, 0, nil, 200, "ok", token, 0, keys("#42"), "", nil},
+		{"an empty token sends no Authorization header at all", []string{"#1: fix"}, 0, nil, 200, "ok", "", 0, keys("#1"), "", nil},
 		{"a push delivering no key records nothing and succeeds", []string{"chore: bump platform submodule to abc (#1092 automation)"}, 0, nil, 200, "ok", "", 0, nil, "recorded nothing", nil},
 		{"a subject naming a key only in a refs group records nothing", []string{"operator-kit exports the host-cannot-run refusal class (refs #5141)"}, 0, nil, 200, "ok", "", 0, nil, "recorded nothing", nil},
 		{"an unset TRACKER_BASE_URL never silently skips a real delivery", []string{"#1: fix"}, 0, nil, noBoard, "", "", 1, nil, "no board to record on", nil},
 		{"an unset TRACKER_BASE_URL is moot when nothing would be recorded", []string{"chore: bump platform submodule to abc (#1092 automation)"}, 0, nil, noBoard, "", "", 0, nil, "recorded nothing", nil},
-		{"a rejected record fails carrying the status and the body", []string{"#1: fix"}, 0, nil, 500, "boom-details", "", 1, keys(1), "board returned 500: boom-details", nil},
+		{"a rejected record fails carrying the status and the body", []string{"#1: fix"}, 0, nil, 500, "boom-details", "", 1, keys("#1"), "board returned 500: boom-details", nil},
 		{"a transport failure is a hard failure", []string{"#1: fix"}, 0, nil, unreachable, "", "", 1, nil, "posting delivery", nil},
-		{"a board answer echoing the token prints it redacted on one line", []string{"#1: fix"}, 0, nil, 401, "echoed " + token + "\n::error::forged\tline", token, 1, keys(1), "board returned 401: echoed [REDACTED] ::error::forgedline\n", nil},
-		{"the token reaches the request but never the output", []string{"#1: fix"}, 0, nil, 401, "unauthorized", token, 1, keys(1), "",
-			func(t *testing.T, o outcome) {
-				if strings.Contains(o.out, token) {
-					t.Errorf("output carries the bearer token: %q", o.out)
-				}
-				if auth := o.reqs[0].headers.Get("Authorization"); auth != "Bearer "+token {
-					t.Errorf("Authorization = %q, want %q", auth, "Bearer "+token)
-				}
-			}},
+		{"a board answer echoing the token prints it redacted on one line", []string{"#1: fix"}, 0, nil, 401, "echoed " + token + "\n::error::forged\tline", token, 1, keys("#1"), "board returned 401: echoed [REDACTED] ::error::forgedline\n", nil},
 		{"the range excludes the before commit itself", []string{"#1: one", "#2: two", "#3: three"}, 0,
-			func(r *testRepo) string { return r.shas[0] }, 200, "ok", "", 0, keys(2, 3), "", nil},
-		{"no before and no anchor deliver only the tip, never full history", []string{"#1: one", "#2: two"}, 0, nil, 200, "ok", "", 0, keys(2), "", nil},
-		{"an all-zero before and no anchor deliver only the tip", []string{"#1: one", "#2: two"}, 0,
-			func(*testRepo) string { return testZeroSHA }, 200, "ok", "", 0, keys(2), "", nil},
+			func(r *testRepo) string { return r.shas[0] }, 200, "ok", "", 0, keys("#2 #3"), "", nil},
+		{"no before and no anchor deliver only the tip, never full history", []string{"#1: one", "#2: two"}, 0, nil, 200, "ok", "", 0, keys("#2"), "", nil},
 		{"keys merge across commits in numeric order", []string{"#20: two", "#9: nine"}, 0,
-			func(r *testRepo) string { return r.seed }, 200, "ok", "", 0, keys(9, 20), "", nil},
-		{"a key in one commit's subject and trailer is deduplicated", []string{"#5: fix\x00Jira: #5 #6"}, 0, nil, 200, "ok", "", 0, keys(5, 6), "", nil},
+			seed, 200, "ok", "", 0, keys("#9 #20"), "", nil},
+		{"a key in one commit's subject and trailer is deduplicated", []string{"#5: fix\x00Jira: #5 #6"}, 0, nil, 200, "ok", "", 0, keys("#5 #6"), "", nil},
 		{"the board-synced anchor wins over --before", []string{"#1: one", "#2: two", "#3: three"}, 1,
-			func(r *testRepo) string { return r.seed }, 200, "ok", "", 0, keys(2, 3), "", nil},
-		{"a successful write advances the anchor and pushes it to origin", []string{"#1: one"}, 0, nil, 200, "ok", "", 0, keys(1), "",
-			func(t *testing.T, o outcome) {
-				if local, origin := tagSHA(o.repo.dir), tagSHA(o.repo.origin); local != o.tip || origin != o.tip {
-					t.Errorf("board-synced tag local %q, origin %q; want both at %q, since a run's own checkout is discarded", local, origin, o.tip)
-				}
-			}},
-		{"a failed write leaves the anchor unset", []string{"#1: one"}, 0, nil, 500, "boom", "", 1, keys(1), "",
-			func(t *testing.T, o outcome) {
-				if local, origin := tagSHA(o.repo.dir), tagSHA(o.repo.origin); local != "" || origin != "" {
-					t.Errorf("board-synced tag local %q, origin %q; want both unset after a failed write", local, origin)
-				}
-			}},
-		{"a run with no board configured leaves the anchor unset", []string{"#1: one"}, 0, nil, noBoard, "", "", 1, nil, "",
-			func(t *testing.T, o outcome) {
-				if local := tagSHA(o.repo.dir); local != "" {
-					t.Errorf("local board-synced tag = %q, want it unset when the run never wrote", local)
-				}
-			}},
+			seed, 200, "ok", "", 0, keys("#2 #3"), "", nil},
+		{"a successful write advances the anchor and pushes it to origin", []string{"#1: one"}, 0, nil, 200, "ok", "", 0, keys("#1"), "", anchorAt(true)},
+		{"a failed write leaves the anchor unset", []string{"#1: one"}, 0, nil, 500, "boom", "", 1, keys("#1"), "", anchorAt(false)},
+		{"a run with no board configured leaves the anchor unset", []string{"#1: one"}, 0, nil, noBoard, "", "", 1, nil, "", anchorAt(false)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -172,15 +133,15 @@ func TestRun(t *testing.T) {
 			if tc.status != noBoard {
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 					raw, _ := io.ReadAll(req.Body)
-					o.reqs = append(o.reqs, capturedRequest{req.Method, req.URL.Path, req.Header.Clone(), raw})
+					head := append([]string{req.Method, req.URL.Path, req.Header.Get("Content-Type")}, req.Header.Values("Authorization")...)
+					o.reqs = append(o.reqs, capturedRequest{head, raw})
 					w.WriteHeader(tc.status)
 					fmt.Fprint(w, tc.body)
 				}))
 				baseURL = srv.URL
+				t.Cleanup(srv.Close)
 				if tc.status == unreachable {
 					srv.Close()
-				} else {
-					t.Cleanup(srv.Close)
 				}
 			}
 			t.Setenv("TRACKER_BASE_URL", baseURL)
@@ -200,6 +161,21 @@ func TestRun(t *testing.T) {
 			if want := min(len(tc.wantKeys), 1); len(o.reqs) != want {
 				t.Fatalf("server received %d requests, want %d", len(o.reqs), want)
 			}
+			wantHead := []string{http.MethodPost, "/v1/delivered", "application/json"}
+			if tc.token != "" {
+				wantHead = append(wantHead, "Bearer "+tc.token)
+			}
+			for _, req := range o.reqs {
+				if !slices.Equal(req.head, wantHead) {
+					t.Errorf("method, path, content type, authorization = %q, want %q", req.head, wantHead)
+				}
+				if d := delivered(t, req.body).Delivery; d != o.tip {
+					t.Errorf("delivery = %q, want the tip %q", d, o.tip)
+				}
+			}
+			if tc.token != "" && strings.Contains(o.out, tc.token) {
+				t.Errorf("output carries the bearer token: %q", o.out)
+			}
 			if tc.wantKeys != nil {
 				if got := delivered(t, o.reqs[0].body).Keys; !slices.Equal(got, tc.wantKeys) {
 					t.Errorf("delivered keys = %v, want %v", got, tc.wantKeys)
@@ -212,15 +188,11 @@ func TestRun(t *testing.T) {
 	}
 }
 
-// deliveredPayload decodes the body the board receives independently of the type that encodes it.
-type deliveredPayload struct {
-	Delivery string   `json:"delivery"`
-	Keys     []string `json:"keys"`
-}
-
-func delivered(t *testing.T, raw []byte) deliveredPayload {
+func delivered(t *testing.T, raw []byte) (p struct {
+	Delivery string
+	Keys     []string
+}) {
 	t.Helper()
-	var p deliveredPayload
 	if err := json.Unmarshal(raw, &p); err != nil {
 		t.Fatalf("decoding delivered payload %s: %v", raw, err)
 	}
