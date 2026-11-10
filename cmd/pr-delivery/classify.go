@@ -2,6 +2,7 @@ package main
 
 import (
 	"path"
+	"regexp"
 	"strings"
 )
 
@@ -87,4 +88,69 @@ func hasDirPrefix(p, prefix string) bool {
 		return strings.Contains("/"+p, "/"+dir)
 	}
 	return strings.HasPrefix(p, prefix)
+}
+
+// usesPrefix is a workflow line up to the "@" of an action's ref, and refSuffix the ref with an optional trailing comment.
+var (
+	usesPrefix = regexp.MustCompile(`^\s*(?:- )?uses:\s+[^\s@#]+$`)
+	refSuffix  = regexp.MustCompile(`^[^\s#]+(?:\s+#.*)?$`)
+)
+
+// classifyPatch places a changed path in its class, where a workflow whose patch only moves `uses:` refs is a version pin, so other.
+func classifyPatch(p, patch string) pathClass {
+	class := classify(p, false)
+	if class == classCode && isWorkflow(p) && refOnlyBump(patch) {
+		return classOther
+	}
+	return class
+}
+
+func isWorkflow(p string) bool {
+	ext := path.Ext(p)
+	return strings.HasPrefix(p, ".github/workflows/") && (ext == ".yml" || ext == ".yaml")
+}
+
+// refOnlyBump reads a `git diff-tree -p -U0` patch and reports whether every hunk replaces uses: lines one for one, changing only the ref after "@" and its comment.
+func refOnlyBump(patch string) bool {
+	var removed, added []string
+	hunks := 0
+	pairsMatch := func() bool {
+		if len(removed) == 0 || len(removed) != len(added) {
+			return false
+		}
+		for i := range removed {
+			if !sameUsesLine(removed[i], added[i]) {
+				return false
+			}
+		}
+		removed, added = nil, nil
+		return true
+	}
+	for _, line := range strings.Split(patch, "\n") {
+		switch {
+		case strings.HasPrefix(line, "@@"):
+			if hunks > 0 && !pairsMatch() {
+				return false
+			}
+			hunks++
+		case hunks == 0, line == "", strings.HasPrefix(line, `\`):
+		case line[0] == '-':
+			removed = append(removed, line[1:])
+		case line[0] == '+':
+			added = append(added, line[1:])
+		default:
+			return false
+		}
+	}
+	return hunks > 0 && pairsMatch()
+}
+
+func sameUsesLine(old, new string) bool {
+	oldPrefix, oldRef, ok := strings.Cut(old, "@")
+	if !ok {
+		return false
+	}
+	newPrefix, newRef, ok := strings.Cut(new, "@")
+	return ok && oldPrefix == newPrefix && usesPrefix.MatchString(oldPrefix) &&
+		refSuffix.MatchString(oldRef) && refSuffix.MatchString(newRef)
 }

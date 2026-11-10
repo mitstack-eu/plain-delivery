@@ -72,7 +72,18 @@ func readCommit(repo, sha string) (commit, error) {
 	if err != nil {
 		return commit{}, err
 	}
-	return commit{SHA: sha, Subject: subject, Body: body, Paths: classifyRaw(raw)}, nil
+	paths := classifyRaw(raw)
+	for p, class := range paths {
+		if class != classCode || !isWorkflow(p) {
+			continue
+		}
+		patch, err := gitOutput(repo, "diff-tree", "--no-commit-id", "-p", "-U0", "--no-color", sha, "--", p)
+		if err != nil {
+			return commit{}, err
+		}
+		paths[p] = classifyPatch(p, patch)
+	}
+	return commit{SHA: sha, Subject: subject, Body: body, Paths: paths}, nil
 }
 
 // classifyRaw reads `git diff-tree --raw -z`, whose -z keeps an unusual path unquoted: a ":<old mode> <new mode> <old sha> <new sha> <status>" field, then the path, or the old and new path for a rename or copy.

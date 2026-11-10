@@ -55,8 +55,22 @@ table in `cmd/pr-delivery/classify.go`.
 | Class | Examples |
 |---|---|
 | test | `*_test.go`, `*_test.sh`, `*.test.ts`, a Playwright spec under `app/e2e/`, anything under a `testdata/` directory |
-| other | Markdown, `docs/`, a block pin under `blocks/pins/`, a submodule pin, `go.mod`, `go.sum` and `package-lock.json` |
+| other | Markdown, `docs/`, a block pin under `blocks/pins/`, a submodule pin, `go.mod`, `go.sum`, `package-lock.json`, and a workflow change that only moves action versions |
 | code | Every path the table does not name |
+
+A workflow under `.github/workflows/` is code, with one exception that
+`classifyPatch` in `cmd/pr-delivery/classify.go` reads from the commit's
+patch. When every changed line is a `uses:` line, replaced one for one, and
+only the version after `@` and its trailing comment differ, the file counts as
+other, like a `go.sum` line. Dependabot's Actions bump changes exactly that:
+
+```diff
+-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v7.0.0
++      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v7.0.1
+```
+
+The rule holds for every author. Any other changed line, such as an added
+`with:` input, a new step or a different action, keeps the file code.
 
 The check fails in three cases. The first commit to change a test or code
 changes code alone. One commit changes a test and code together. Code changes

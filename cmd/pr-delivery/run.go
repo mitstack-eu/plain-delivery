@@ -46,7 +46,8 @@ func Run(args []string, stdout io.Writer) int {
 	}
 	failures := judgeOrder(commits)
 	token := os.Getenv("TRACKER_API_TOKEN")
-	if slices.Contains(keylessApps, *author) {
+	keyless := slices.Contains(keylessApps, *author)
+	if keyless {
 		fmt.Fprintf(stdout, "pr-delivery: %s is a GitHub App on the keyless list, so the board is not asked about its keys\n", *author)
 	} else {
 		failures = append(failures, judgeKeys(*title, commits, boardStatuses(os.Getenv("TRACKER_BASE_URL"), token))...)
@@ -57,6 +58,10 @@ func Run(args []string, stdout io.Writer) int {
 	if len(failures) > 0 {
 		fmt.Fprintln(stdout, "pr-delivery: commit the failing tests first and the code that passes them after, each alone, and name a claimed issue in the title and a commit as \"MIT-###:\" or \"(refs MIT-###)\"")
 		return 1
+	}
+	if keyless {
+		fmt.Fprintf(stdout, "pr-delivery: %d commit(s) judged: the tests came first, and the board was not asked about the keys of a GitHub App on the keyless list\n", len(commits))
+		return 0
 	}
 	fmt.Fprintf(stdout, "pr-delivery: %d commit(s) judged: the tests came first and every key is claimed\n", len(commits))
 	return 0
