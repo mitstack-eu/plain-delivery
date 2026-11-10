@@ -15,12 +15,17 @@ import (
 
 const boardToken = "test-board-token"
 
-// step is one commit: each path is written, or, for a gitlink step, pointed at the seed commit as a submodule.
+// step is one commit: rename moves a file first, keeping or appending to its body, then each path is written, or, for a gitlink step, pointed at the seed commit as a submodule.
 type step struct {
-	paths   []string
-	subject string
-	gitlink bool
+	paths      []string
+	subject    string
+	gitlink    bool
+	rename     [2]string
+	editRename bool
 }
+
+// body is long enough that an appended line keeps a renamed file similar enough for git to see a rename.
+func body(p string) string { return strings.Repeat("an unchanged line of "+p+"\n", 20) }
 
 func runGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
@@ -41,6 +46,13 @@ func newRange(t *testing.T, steps []step) (dir, base string, shas []string) {
 	runGit(t, dir, "commit", "--allow-empty", "-q", "-m", "seed")
 	base = runGit(t, dir, "rev-parse", "HEAD")
 	for i, s := range steps {
+		if from, to := s.rename[0], s.rename[1]; from != "" {
+			runGit(t, dir, "mv", from, to)
+			if s.editRename {
+				appendLine(t, filepath.Join(dir, to))
+				runGit(t, dir, "add", to)
+			}
+		}
 		for _, p := range s.paths {
 			if s.gitlink {
 				runGit(t, dir, "update-index", "--add", "--cacheinfo", "160000,"+base+","+p)
@@ -50,7 +62,7 @@ func newRange(t *testing.T, steps []step) (dir, base string, shas []string) {
 			if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(full, []byte(s.subject+p), 0o644); err != nil {
+			if err := os.WriteFile(full, []byte(body(p)+s.subject), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			runGit(t, dir, "add", p)
@@ -63,6 +75,18 @@ func newRange(t *testing.T, steps []step) (dir, base string, shas []string) {
 		shas = append(shas, runGit(t, dir, "rev-parse", "HEAD"))
 	}
 	return dir, base, shas
+}
+
+func appendLine(t *testing.T, path string) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	if _, err := f.WriteString("an edited line\n"); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // fakeBoard answers the issue list route for the keys it holds, refusing a request without the board token, and counts its requests.
@@ -101,7 +125,7 @@ func TestRun(t *testing.T) {
 		// wantLine is one line the output must hold, with @N standing for the twelve-character sha of step N.
 		wantLine string
 	}{
-		{"a test commit and then its code under an In Progress key passes", "MIT-12: fix", "",
+		{"a person's test commit and then its code under an In Progress key passes", "MIT-12: fix", "User",
 			[]step{{paths: []string{"api/run_test.go"}}, {paths: []string{"api/run.go"}}}, inProgress, 0, ""},
 		{"a key in Pull Request passes", "MIT-12: fix", "",
 			[]step{{paths: []string{"api/run_test.go"}}, {paths: []string{"api/run.go"}}}, map[string]string{"MIT-12": "Pull Request"}, 0, ""},
@@ -118,6 +142,11 @@ func TestRun(t *testing.T) {
 			[]step{{paths: []string{"README.md", "docs/flow.md"}}}, inProgress, 0, ""},
 		{"a pin bump changing only pin files under a claimed key passes", "MIT-12: pin managed-ci to 2.21.0", "",
 			[]step{{paths: pinFiles}}, inProgress, 0, ""},
+		{"a pure rename of a test beside a code change counts as neither half, so the commit is not mixed", "MIT-12: fix", "",
+			[]step{{paths: []string{"api/run_test.go"}}, {paths: []string{"api/run.go"}, rename: [2]string{"api/run_test.go", "api/exec_test.go"}}}, inProgress, 0, ""},
+		{"a renamed and edited test counts as a test at its new path", "MIT-12: fix", "",
+			[]step{{paths: []string{"api/run_test.go"}}, {paths: []string{"api/run.go"}, rename: [2]string{"api/run_test.go", "api/exec_test.go"}, editRename: true}}, inProgress, 1,
+			`pr-delivery: commit @1 "MIT-12: step b" changes a test and code together: tests api/exec_test.go; code api/run.go`},
 		{"a key the board does not hold fails naming it", "MIT-12: fix", "",
 			[]step{{paths: []string{"README.md"}}}, map[string]string{}, 1, "pr-delivery: MIT-12 is not an issue on the board"},
 		{"a key in Ready fails naming its status", "MIT-12: fix", "",
@@ -169,6 +198,9 @@ func TestRun(t *testing.T) {
 			}
 			if tc.author == "Bot" && *requests != 0 {
 				t.Errorf("a GitHub App's pull request asked the board %d time(s); want none", *requests)
+			}
+			if tc.author != "Bot" && tc.board != nil && *requests != 1 {
+				t.Errorf("a person's pull request asked the board %d time(s); want one request for every key", *requests)
 			}
 		})
 	}

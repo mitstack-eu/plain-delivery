@@ -83,6 +83,9 @@ func TestMessageAndReferences(t *testing.T) {
 			if !slices.Equal(got, tc.want) || !slices.Equal(refs, tc.wantRefs) {
 				t.Errorf("Message, References(%q, %q) = %v, %v; want %v, %v", subject, body, got, refs, tc.want, tc.wantRefs)
 			}
+			if named, want := boardkeys.Named(subject, body), boardkeys.Merge(tc.want, tc.wantRefs); !slices.Equal(named, want) {
+				t.Errorf("Named(%q, %q) = %v; want every delivered and referenced key, %v", subject, body, named, want)
+			}
 		})
 	}
 }
