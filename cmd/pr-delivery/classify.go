@@ -19,11 +19,12 @@ func (c pathClass) String() string {
 	return [...]string{"other", "test", "code"}[c]
 }
 
-// classRule matches a path by a slash-separated prefix, an exact path, or a basename pattern.
+// classRule matches a path by a slash-separated prefix, an exact path, a trailing path at any depth, or a basename pattern.
 type classRule struct {
 	class    pathClass
 	prefixes []string
 	exact    []string
+	tails    []string
 	basename []string
 }
 
@@ -39,7 +40,10 @@ var classRules = []classRule{
 		// A fixture directory and a test library are imported by tests alone, though their names carry no suffix.
 		class:    classTest,
 		prefixes: []string{"*/testdata/", "*/__tests__/", "*/repotest/", "app/src/test/", "app/e2e/", "scripts/test/"},
+		// tofu test loads a terraform.tfvars from its tests directory alone, so the file never reaches a real plan.
+		tails: []string{"tests/terraform.tfvars"},
 		basename: []string{
+			"*.tftest.hcl",
 			"*_test.go", "*_test.py", "test_*.py", "*_test.sh", "*.test.sh",
 			"*_test.js", "*_test.jsx", "*_test.ts", "*_test.tsx",
 			"*.test.js", "*.test.jsx", "*.test.ts", "*.test.tsx",
@@ -70,6 +74,11 @@ func (r classRule) matches(p string) bool {
 	}
 	for _, pre := range r.prefixes {
 		if hasDirPrefix(p, pre) {
+			return true
+		}
+	}
+	for _, tail := range r.tails {
+		if p == tail || strings.HasSuffix(p, "/"+tail) {
 			return true
 		}
 	}

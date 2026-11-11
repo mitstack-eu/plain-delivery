@@ -63,6 +63,19 @@ func TestClassify(t *testing.T) {
 		{"a proto fixture the dev route renders is code", "app/src/proto/fixtures/stack.ts", false, classCode},
 		{"a JSON file beside the regenerated block facts is code", "app/src/proto/fixtures/otherFacts.json", false, classCode},
 		{"a dated timeline under product is other", "product/roadmap/2026-08-28-timeline.json", false, classOther},
+		{"an OpenTofu test under the platform's tofu tests directory is a test", "deploy/tofu/tests/ha_cluster_ecr_pull.tftest.hcl", false, classTest},
+		{"an OpenTofu test beside its module is a test", "deploy/tofu/atlassian-archive/bucket.tftest.hcl", false, classTest},
+		{"an OpenTofu test under a nested module's tests directory is a test", "deploy/tofu/org/tests/org.tftest.hcl", false, classTest},
+		{"an OpenTofu test at a block repository's root tests directory is a test", "tests/main.tftest.hcl", false, classTest},
+		{"an OpenTofu test under a block's perapp module is a test", "perapp/tests/mandatory_tags.tftest.hcl", false, classTest},
+		{"the variable file tofu test loads from a tests directory is a test", "perapp/tests/terraform.tfvars", false, classTest},
+		{"the variable file in a root tests directory is a test", "tests/terraform.tfvars", false, classTest},
+		{"an OpenTofu variables file is code", "deploy/tofu/variables.tf", false, classCode},
+		{"an OpenTofu resource file is code", "deploy/tofu/ecr.tf", false, classCode},
+		{"an OpenTofu file under a tests directory is code", "deploy/tofu/tests/helper.tf", false, classCode},
+		{"a module's variable file outside a tests directory is code", "perapp/terraform.tfvars", false, classCode},
+		{"a variable file whose name only starts like the test one is code", "perapp/tests/terraform.tfvars.example", false, classCode},
+		{"an OpenTofu lock file is code", "deploy/tofu/.terraform.lock.hcl", false, classCode},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
