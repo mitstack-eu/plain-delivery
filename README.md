@@ -54,7 +54,7 @@ table in `cmd/pr-delivery/classify.go`.
 
 | Class | Examples |
 |---|---|
-| test | `*_test.go`, `*_test.sh`, `*.test.ts`, a Playwright spec under `app/e2e/`, anything under a `testdata/` directory |
+| test | `*_test.go`, `*_test.sh`, `*.test.ts`, an OpenTofu test `*.tftest.hcl`, the `terraform.tfvars` that `tofu test` loads from a `tests/` directory, a Playwright spec under `app/e2e/`, anything under a `testdata/` directory |
 | other | Markdown, `docs/`, a block pin under `blocks/pins/`, a submodule pin, `go.mod`, `go.sum`, `package-lock.json`, and a workflow change that only moves action versions |
 | code | Every path the table does not name |
 
