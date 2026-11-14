@@ -100,6 +100,21 @@ func TestClassifyPatch(t *testing.T) {
 	}
 	checkoutBump := "@@ -12 +12 @@ jobs:\n-      - uses: actions/checkout@" + oldRef + " # v7.0.0\n+      - uses: actions/checkout@" + newRef + " # v7.0.1\n"
 	goBump := "@@ -15 +15 @@ jobs:\n-      - uses: actions/setup-go@" + oldRef + " # v6.0.0\n+      - uses: actions/setup-go@" + newRef + " # v6.1.0\n"
+	const (
+		edgeBuild = "deploy/caddy/Dockerfile"
+		walgBuild = "deploy/wal-shipper/Dockerfile"
+	)
+	caddyPins := "@@ -13,2 +13,3 @@\n" +
+		"-# chi and go-jose are dependencies rather than xcaddy plugins, so xcaddy moves\n" +
+		"-# each through --replace; --with would fail to import them.\n" +
+		"+# chi, go-jose and OpenTelemetry are dependencies rather than xcaddy plugins, so\n" +
+		"+# xcaddy moves each through --replace; --with would fail to import them. The\n" +
+		"+# OpenTelemetry lines name each module Caddy requires directly.\n" +
+		"@@ -28 +29,3 @@ RUN xcaddy build ${CADDY_VERSION} --output /usr/bin/caddy \\\n" +
+		"-      --replace github.com/go-jose/go-jose/v4=github.com/go-jose/go-jose/v4@v4.1.6\n" +
+		"+      --replace github.com/go-jose/go-jose/v4=github.com/go-jose/go-jose/v4@v4.1.6 \\\n" +
+		"+      --replace go.opentelemetry.io/otel=go.opentelemetry.io/otel@v1.47.0 \\\n" +
+		"+      --replace go.opentelemetry.io/otel/sdk/log=go.opentelemetry.io/otel/sdk/log@v1.47.0\n"
 	cases := []struct {
 		name, path, patch string
 		want              pathClass
@@ -138,6 +153,34 @@ func TestClassifyPatch(t *testing.T) {
 			patchOf("scripts/ci.yml", checkoutBump), classCode},
 		{"a ref-only bump of a test path keeps it a test", "scripts/test/fixtures/required-checks/pipeline.yml",
 			patchOf("scripts/test/fixtures/required-checks/pipeline.yml", checkoutBump), classTest},
+		{"a --replace added after the last line of an xcaddy build, so the line before it gains a trailing backslash, beside a reflowed comment, is other", edgeBuild,
+			patchOf(edgeBuild, caddyPins), classOther},
+		{"a go get argument moved and another added beside it, the last one ending in a semicolon, is other", walgBuild,
+			patchOf(walgBuild, "@@ -99 +99,2 @@\n-      go.opentelemetry.io/otel/sdk@v1.45.0; \\\n+      go.opentelemetry.io/otel/sdk@v1.47.0 \\\n+      go.opentelemetry.io/otel/trace@v1.47.0; \\\n"), classOther},
+		{"a go get line naming its arguments after go get itself is other", walgBuild,
+			patchOf(walgBuild, "@@ -96 +96 @@\n-    go get golang.org/x/net@v0.61.0 golang.org/x/crypto@v0.57.0; \\\n+    go get golang.org/x/net@v0.62.0 golang.org/x/crypto@v0.58.1-0.20261009181718-2f1f834330b2; \\\n"), classOther},
+		{"a --replace line removed together with the comment naming it is other", edgeBuild,
+			patchOf(edgeBuild, "@@ -12 +11,0 @@\n-# chi moves through --replace until Caddy itself requires v5.4.0.\n", "@@ -27 +25,0 @@\n-      --replace github.com/go-chi/chi/v5=github.com/go-chi/chi/v5@v5.4.0 \\\n"), classOther},
+		{"a --replace whose target names another module is code", edgeBuild,
+			patchOf(edgeBuild, "@@ -26 +26 @@\n-      --replace golang.org/x/net=golang.org/x/net@v0.61.0 \\\n+      --replace golang.org/x/net=example.com/fork/net@v0.62.0 \\\n"), classCode},
+		{"an added --with plugin line is code", edgeBuild,
+			patchOf(edgeBuild, "@@ -28 +28,2 @@\n-      --replace github.com/go-jose/go-jose/v4=github.com/go-jose/go-jose/v4@v4.1.6\n+      --replace github.com/go-jose/go-jose/v4=github.com/go-jose/go-jose/v4@v4.1.6 \\\n+      --with github.com/porech/caddy-maxmind-geolocation@v1.0.1\n"), classCode},
+		{"text after a --replace version is code", edgeBuild,
+			patchOf(edgeBuild, "@@ -26 +26 @@\n-      --replace golang.org/x/net=golang.org/x/net@v0.61.0 \\\n+      --replace golang.org/x/net=golang.org/x/net@v0.62.0 && wget -qO /usr/bin/caddy https://example.com/caddy \\\n"), classCode},
+		{"a version word whose path has no dot in its first element, so names no Go module, is code", walgBuild,
+			patchOf(walgBuild, "@@ -30 +30 @@\n-      bash@v5.1.0 \\\n+      bash@v5.2.0 \\\n"), classCode},
+		{"text after a go get argument's version is code", walgBuild,
+			patchOf(walgBuild, "@@ -99 +99 @@\n-      go.opentelemetry.io/otel/sdk@v1.45.0 \\\n+      go.opentelemetry.io/otel/sdk@v1.47.0 && go env -w GOFLAGS=-mod=mod \\\n"), classCode},
+		{"a changed # syntax= parser directive is code", "api/Dockerfile",
+			patchOf("api/Dockerfile", "@@ -1 +1 @@\n-# syntax=docker/dockerfile:1.7\n+# syntax=docker/dockerfile:1.8\n"), classCode},
+		{"a comment added above a # syntax= directive at the head of the file, which makes it a plain comment, is code", "api/Dockerfile",
+			patchOf("api/Dockerfile", "@@ -0,0 +1 @@\n+# The api image.\n"), classCode},
+		{"a comment removed from the first line, which can make the line below it a directive, is code", edgeBuild,
+			patchOf(edgeBuild, "@@ -1 +0,0 @@\n-# The mitstack edge.\n"), classCode},
+		{"the edge build's pin-only patch on a Dockerfile.tmpl scaffold template keeps the path's class, code", "api/internal/scaffold/blockkitv1/Dockerfile.tmpl",
+			patchOf("api/internal/scaffold/blockkitv1/Dockerfile.tmpl", caddyPins), classCode},
+		{"a pin moved and a RUN line changed in the same Dockerfile is code", edgeBuild,
+			patchOf(edgeBuild, caddyPins, "@@ -20 +20 @@\n-RUN apk add --no-cache git\n+RUN apk add --no-cache git curl\n"), classCode},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
