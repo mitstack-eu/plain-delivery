@@ -175,9 +175,10 @@ func sameUsesLine(old, new string) bool {
 		refSuffix.MatchString(oldRef) && refSuffix.MatchString(newRef)
 }
 
-// A pin needs a full semver tag, so a floating ref such as `@latest` never counts, and lineEnd allows a trailing `;`, `\`, or both in that order.
+// A pin's first path element holds a dot, as Go requires of a module path, and its version is a full semver tag, so `@latest` never counts; lineEnd allows a trailing `;`, `\`, or both in that order.
 const (
-	modulePath    = `[A-Za-z0-9][A-Za-z0-9._~-]*(?:/[A-Za-z0-9._~-]+)*`
+	moduleDomain  = `[a-z0-9][a-z0-9-]*(?:\.[a-z0-9-]+)+`
+	modulePath    = moduleDomain + `(?:/[A-Za-z0-9._~-]+)*`
 	moduleVersion = `v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?`
 	modulePin     = modulePath + `@` + moduleVersion
 	lineEnd       = `[ \t]*;?[ \t]*\\?[ \t]*$`
@@ -185,8 +186,8 @@ const (
 
 var (
 	// replacePin is an xcaddy `--replace M=M@V` line, whose two module paths modulePinLine compares.
-	replacePin = regexp.MustCompile(`^[ \t]*--replace[ \t]+(` + modulePath + `)=(` + modulePath + `)@` + moduleVersion + lineEnd)
-	goGetPins      = regexp.MustCompile(`^[ \t]*(?:go[ \t]+get[ \t]+)?` + modulePin + `(?:[ \t]+` + modulePin + `)*` + lineEnd)
+	replacePin      = regexp.MustCompile(`^[ \t]*--replace[ \t]+(` + modulePath + `)=(` + modulePath + `)@` + moduleVersion + lineEnd)
+	goGetPins       = regexp.MustCompile(`^[ \t]*(?:go[ \t]+get[ \t]+)?` + modulePin + `(?:[ \t]+` + modulePin + `)*` + lineEnd)
 	dockerComment   = regexp.MustCompile(`^[ \t]*#`)
 	parserDirective = regexp.MustCompile(`^[ \t]*#[ \t]*[A-Za-z][A-Za-z0-9]*[ \t]*=`)
 )

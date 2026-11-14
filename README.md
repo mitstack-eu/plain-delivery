@@ -80,15 +80,16 @@ adds lines and reflows the comment above them, so this rule judges each added
 and removed line on its own. The file counts as other when every such line is
 one of three kinds:
 
-1. An xcaddy `--replace M=M@V` line that names the same module M on both
-   sides of the `=`.
+1. A `--replace M=M@V` line for xcaddy, the tool that builds Caddy with
+   chosen modules, naming the same module M on both sides of the `=`.
 2. A `go get` argument line of one or more `M@V` words, which may follow
    `go get` itself.
 3. A comment.
 
-Here M is a Go module path and V a module version, and a line may end in a
-semicolon, a backslash or both. This patch, which adds a module after the
-last `--replace` of a build, counts as other:
+Here M is a Go module path, whose first element holds a dot as Go requires,
+and V a full version such as `v1.47.0`, so `@latest` does not count. A line
+may end in a semicolon, a backslash or both. This patch, which adds a module
+after the last `--replace` of a build, counts as other:
 
 ```diff
 -      --replace github.com/go-jose/go-jose/v4=github.com/go-jose/go-jose/v4@v4.1.6
@@ -99,9 +100,11 @@ last `--replace` of a build, counts as other:
 Any other changed line keeps the file code. That covers a `--replace` onto
 another module, a `--with` plugin, text after a version and a `RUN` line. It
 also covers a comment shaped like a parser directive, such as `# syntax=`,
-wherever it sits, because a directive at the head of a file changes how
-Docker reads it. A path whose name only starts with `Dockerfile`, such as a
-`Dockerfile.tmpl` template, keeps the class the table gives it.
+wherever it sits. A parser directive is a comment at the head of a Dockerfile
+that tells Docker how to read the rest of the file, and the patch alone cannot
+show whether a line heads the file. A path whose name only starts with
+`Dockerfile`, such as a `Dockerfile.tmpl` template, keeps the class the table
+gives it.
 
 The check fails in three cases. The first commit to change a test or code
 changes code alone. One commit changes a test and code together. Code changes
