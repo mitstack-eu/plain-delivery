@@ -213,7 +213,7 @@ func modulePinsOnly(patch string) bool {
 	return changed
 }
 
-// modulePinLine reports whether a Dockerfile line only names module versions or is a comment; a comment shaped like a parser directive stays code wherever it sits, since the patch alone cannot show whether it heads the file, where it changes how Docker reads it.
+// modulePinLine reports whether a Dockerfile line only names module versions or is a comment, where a directive-shaped comment stays code anywhere, since a patch cannot show whether it heads the file.
 func modulePinLine(line string) bool {
 	switch {
 	case parserDirective.MatchString(line):

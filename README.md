@@ -75,10 +75,10 @@ The rule holds for every author. Any other changed line, such as an added
 `with:` input, a new step or a different action, keeps the file code.
 
 A file named `Dockerfile` is code too, with a second exception that
-`classifyPatch` reads from the patch. A module move often adds lines and
-reflows the comment above them, so this rule judges each added and removed
-line on its own. The file counts as other when every such line is one of
-three kinds:
+`modulePinsOnly`, in the same file, reads from the patch. A module move often
+adds lines and reflows the comment above them, so this rule judges each added
+and removed line on its own. The file counts as other when every such line is
+one of three kinds:
 
 1. An xcaddy `--replace M=M@V` line that names the same module M on both
    sides of the `=`.
@@ -97,11 +97,11 @@ last `--replace` of a build, counts as other:
 ```
 
 Any other changed line keeps the file code. That covers a `--replace` onto
-another module, a `--with` plugin, text after a version and a `RUN` line. It also covers a comment shaped like a parser directive, such as
-`# syntax=`, wherever it sits, because a directive at the head of a file
-changes how Docker reads it. A path whose name only starts with
-`Dockerfile`, such as a `Dockerfile.tmpl` template, keeps the class the table
-gives it.
+another module, a `--with` plugin, text after a version and a `RUN` line. It
+also covers a comment shaped like a parser directive, such as `# syntax=`,
+wherever it sits, because a directive at the head of a file changes how
+Docker reads it. A path whose name only starts with `Dockerfile`, such as a
+`Dockerfile.tmpl` template, keeps the class the table gives it.
 
 The check fails in three cases. The first commit to change a test or code
 changes code alone. One commit changes a test and code together. Code changes
