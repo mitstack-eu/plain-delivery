@@ -189,6 +189,33 @@ func TestRun(t *testing.T) {
 	ciBefore := workflowHead + oldCheckout + " # v7.0.0\n" + workflowTail
 	ciBumped := workflowHead + newCheckout + " # v7.0.1\n" + workflowTail
 	ciBumpedWithInput := workflowHead + newCheckout + " # v7.0.1\n        with:\n          fetch-depth: 0\n" + workflowTail
+	const (
+		caddyfile = "app/Dockerfile"
+		walgfile  = "deploy/wal-shipper/Dockerfile"
+		joseRepl  = "      --replace github.com/go-jose/go-jose/v4=github.com/go-jose/go-jose/v4@v4.1.6"
+		otelRepl  = "      --replace go.opentelemetry.io/otel=go.opentelemetry.io/otel@v1.47.0"
+		joseGet   = "      github.com/go-jose/go-jose/v4@v4.1.6"
+	)
+	caddyBuild := func(comment string, replaces ...string) string {
+		return "FROM golang:1.26.11-alpine AS caddy\n" + comment +
+			"RUN xcaddy build v2.11.7 --output /usr/bin/caddy \\\n" + strings.Join(replaces, " \\\n") + "\n"
+	}
+	walgBuild := func(comment string, modules ...string) string {
+		return "FROM golang:1.26.11-bookworm AS walg\n" + comment +
+			"RUN set -eux; \\\n    go get \\\n" + strings.Join(modules, " \\\n") + "; \\\n    go mod tidy\n"
+	}
+	caddyBefore := caddyBuild("# go-jose is a dependency rather than an xcaddy plugin, so xcaddy\n# moves it through --replace.\n", joseRepl)
+	caddyAfter := caddyBuild("# go-jose and OpenTelemetry are dependencies rather than xcaddy\n# plugins, so xcaddy moves each\n# through --replace.\n", joseRepl, otelRepl)
+	pinsBefore := map[string]string{
+		caddyfile: caddyBefore,
+		walgfile:  walgBuild("# go get raises the OpenTelemetry SDK to its fixed version.\n", "      go.opentelemetry.io/otel/sdk@v1.45.0", joseGet),
+	}
+	pinsAfter := map[string]string{
+		caddyfile: caddyAfter,
+		walgfile: walgBuild("# go get raises OpenTelemetry's SDK and trace modules to their\n# fixed version.\n",
+			"      go.opentelemetry.io/otel/sdk@v1.47.0", "      go.opentelemetry.io/otel/trace@v1.47.0", joseGet),
+	}
+	caddyRunChanged := strings.Replace(caddyAfter, "/usr/bin/caddy", "/usr/local/bin/caddy", 1)
 	cases := []struct {
 		name, title, author string
 		steps               []step
@@ -323,6 +350,18 @@ func TestRun(t *testing.T) {
 		{"a person fails without a key", "chore: bump platform submodule", "octocat",
 			[]step{{paths: []string{"platform"}, subject: "chore: bump platform submodule", gitlink: true}}, nil, 1,
 			"pr-delivery: the title names no board key"},
+		{"a person's Dockerfile patches moving only module versions and comments pass with no test commit", "MIT-12: take OpenTelemetry 1.47.0", "",
+			[]step{
+				{paths: []string{caddyfile, walgfile}, content: pinsBefore, seed: true},
+				{paths: []string{caddyfile, walgfile}, content: pinsAfter},
+			}, inProgress, 0,
+			"pr-delivery: 1 commit(s) judged: the tests came first and every key is claimed"},
+		{"a Dockerfile patch moving a module version and changing a RUN line, with no test, fails as code with no test", "MIT-12: take OpenTelemetry 1.47.0", "",
+			[]step{
+				{paths: []string{caddyfile}, content: map[string]string{caddyfile: caddyBefore}, seed: true},
+				{paths: []string{caddyfile}, content: map[string]string{caddyfile: caddyRunChanged}},
+			}, inProgress, 1,
+			"pr-delivery: the code this pull request changes has no test, since no commit changes a test file"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
