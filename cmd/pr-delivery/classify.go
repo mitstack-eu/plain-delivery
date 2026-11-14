@@ -3,6 +3,8 @@ package main
 import (
 	"path"
 	"regexp"
+	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -130,39 +132,56 @@ func isDockerfile(p string) bool {
 	return path.Base(p) == "Dockerfile"
 }
 
-// refOnlyBump reads a `git diff-tree -p -U0` patch and reports whether every hunk replaces uses: lines one for one, changing only the ref after "@" and its comment.
-func refOnlyBump(patch string) bool {
-	var removed, added []string
-	hunks := 0
-	pairsMatch := func() bool {
-		if len(removed) == 0 || len(removed) != len(added) {
-			return false
-		}
-		for i := range removed {
-			if !sameUsesLine(removed[i], added[i]) {
-				return false
-			}
-		}
-		removed, added = nil, nil
-		return true
-	}
+// hunk is one block of a `git diff-tree -p -U0` patch: the line each side starts at, and the lines it removes and adds.
+type hunk struct {
+	oldStart, newStart int
+	removed, added     []string
+}
+
+var hunkHeader = regexp.MustCompile(`^@@ -([0-9]+)(?:,[0-9]+)? \+([0-9]+)(?:,[0-9]+)? @@`)
+
+// parseHunks reads a -U0 patch into its hunks, failing on a malformed header or a context line, which -U0 never prints.
+func parseHunks(patch string) ([]hunk, bool) {
+	var hunks []hunk
 	for _, line := range strings.Split(patch, "\n") {
 		switch {
 		case strings.HasPrefix(line, "@@"):
-			if hunks > 0 && !pairsMatch() {
-				return false
+			m := hunkHeader.FindStringSubmatch(line)
+			if m == nil {
+				return nil, false
 			}
-			hunks++
-		case hunks == 0, line == "", strings.HasPrefix(line, `\`):
+			oldStart, _ := strconv.Atoi(m[1])
+			newStart, _ := strconv.Atoi(m[2])
+			hunks = append(hunks, hunk{oldStart: oldStart, newStart: newStart})
+		case len(hunks) == 0, line == "", strings.HasPrefix(line, `\`):
 		case line[0] == '-':
-			removed = append(removed, line[1:])
+			hunks[len(hunks)-1].removed = append(hunks[len(hunks)-1].removed, line[1:])
 		case line[0] == '+':
-			added = append(added, line[1:])
+			hunks[len(hunks)-1].added = append(hunks[len(hunks)-1].added, line[1:])
 		default:
-			return false
+			return nil, false
 		}
 	}
-	return hunks > 0 && pairsMatch()
+	return hunks, len(hunks) > 0
+}
+
+// refOnlyBump reports whether every hunk of a -U0 patch replaces uses: lines one for one, changing only the ref after "@" and its comment.
+func refOnlyBump(patch string) bool {
+	hunks, ok := parseHunks(patch)
+	if !ok {
+		return false
+	}
+	for _, h := range hunks {
+		if len(h.removed) == 0 || len(h.removed) != len(h.added) {
+			return false
+		}
+		for i := range h.removed {
+			if !sameUsesLine(h.removed[i], h.added[i]) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func sameUsesLine(old, new string) bool {
@@ -192,27 +211,26 @@ var (
 	parserDirective = regexp.MustCompile(`^[ \t]*#[ \t]*[A-Za-z][A-Za-z0-9]*[ \t]*=`)
 )
 
-// modulePinsOnly reads a `git diff-tree -p -U0` patch and reports whether it changes at least one line and every added and removed line, judged on its own, passes modulePinLine.
+// modulePinsOnly reports whether every added and removed line of a -U0 patch, judged on its own, passes modulePinLine, and no hunk reaches line 1, where a changed comment can make or unmake a parser directive.
 func modulePinsOnly(patch string) bool {
-	inHunk, changed := false, false
-	for _, line := range strings.Split(patch, "\n") {
-		switch {
-		case strings.HasPrefix(line, "@@"):
-			inHunk = true
-		case !inHunk, line == "", strings.HasPrefix(line, `\`):
-		case line[0] == '-' || line[0] == '+':
-			if !modulePinLine(line[1:]) {
-				return false
-			}
-			changed = true
-		default:
+	hunks, ok := parseHunks(patch)
+	if !ok {
+		return false
+	}
+	for _, h := range hunks {
+		if h.oldStart <= 1 || h.newStart <= 1 {
 			return false
 		}
+		for _, line := range slices.Concat(h.removed, h.added) {
+			if !modulePinLine(line) {
+				return false
+			}
+		}
 	}
-	return changed
+	return true
 }
 
-// modulePinLine reports whether a Dockerfile line only names module versions or is a comment, where a directive-shaped comment stays code anywhere, since a patch cannot show whether it heads the file.
+// modulePinLine reports whether a Dockerfile line only names module versions or is a comment, where a directive-shaped comment stays code anywhere, since a -U0 patch cannot show whether only directives sit above it.
 func modulePinLine(line string) bool {
 	switch {
 	case parserDirective.MatchString(line):

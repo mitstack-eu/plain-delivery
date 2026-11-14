@@ -98,13 +98,18 @@ after the last `--replace` of a build, counts as other:
 ```
 
 Any other changed line keeps the file code. That covers a `--replace` onto
-another module, a `--with` plugin, text after a version and a `RUN` line. It
-also covers a comment shaped like a parser directive, such as `# syntax=`,
-wherever it sits. A parser directive is a comment at the head of a Dockerfile
-that tells Docker how to read the rest of the file, and the patch alone cannot
-show whether a line heads the file. A path whose name only starts with
-`Dockerfile`, such as a `Dockerfile.tmpl` template, keeps the class the table
-gives it.
+another module, a `--with` plugin, text after a version and a `RUN` line.
+
+A parser directive is a comment at the head of a Dockerfile, such as
+`# syntax=`, that tells Docker how to read the rest of the file. Docker reads
+directives only until the first other line, so adding or removing a comment
+there can turn a directive into a plain comment or the reverse. A change that
+reaches line 1 therefore keeps the file code. A comment shaped like a
+directive stays code wherever it sits, since the patch does not show whether
+only directives sit above it.
+
+A path whose name only starts with `Dockerfile`, such as a `Dockerfile.tmpl`
+template, keeps the class the table gives it.
 
 The check fails in three cases. The first commit to change a test or code
 changes code alone. One commit changes a test and code together. Code changes
