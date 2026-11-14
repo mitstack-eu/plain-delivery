@@ -55,7 +55,7 @@ table in `cmd/pr-delivery/classify.go`.
 | Class | Examples |
 |---|---|
 | test | `*_test.go`, `*_test.sh`, `*.test.ts`, an OpenTofu test `*.tftest.hcl`, the `terraform.tfvars` that `tofu test` loads from a `tests/` directory, a Playwright spec under `app/e2e/`, anything under a `testdata/` directory |
-| other | Markdown, `docs/`, a block pin under `blocks/pins/`, a submodule pin, `go.mod`, `go.sum`, `package-lock.json`, and a workflow change that only moves action versions |
+| other | Markdown, `docs/`, a block pin under `blocks/pins/`, a submodule pin, `go.mod`, `go.sum`, `package-lock.json`, a workflow change that only moves action versions, and a Dockerfile change that only moves module versions |
 | code | Every path the table does not name |
 
 A workflow under `.github/workflows/` is code, with one exception that
@@ -73,6 +73,35 @@ releases:
 
 The rule holds for every author. Any other changed line, such as an added
 `with:` input, a new step or a different action, keeps the file code.
+
+A file named `Dockerfile` is code too, with a second exception that
+`classifyPatch` reads from the patch. A module move often adds lines and
+reflows the comment above them, so this rule judges each added and removed
+line on its own. The file counts as other when every such line is one of
+three kinds:
+
+1. An xcaddy `--replace M=M@V` line that names the same module M on both
+   sides of the `=`.
+2. A `go get` argument line of one or more `M@V` words, which may follow
+   `go get` itself.
+3. A comment.
+
+Here M is a Go module path and V a module version, and a line may end in a
+semicolon, a backslash or both. This patch, which adds a module after the
+last `--replace` of a build, counts as other:
+
+```diff
+-      --replace github.com/go-jose/go-jose/v4=github.com/go-jose/go-jose/v4@v4.1.6
++      --replace github.com/go-jose/go-jose/v4=github.com/go-jose/go-jose/v4@v4.1.6 \
++      --replace go.opentelemetry.io/otel=go.opentelemetry.io/otel@v1.47.0
+```
+
+Any other changed line keeps the file code. That covers a `--replace` onto
+another module, a `--with` plugin, text after a version and a `RUN` line. It also covers a comment shaped like a parser directive, such as
+`# syntax=`, wherever it sits, because a directive at the head of a file
+changes how Docker reads it. A path whose name only starts with
+`Dockerfile`, such as a `Dockerfile.tmpl` template, keeps the class the table
+gives it.
 
 The check fails in three cases. The first commit to change a test or code
 changes code alone. One commit changes a test and code together. Code changes

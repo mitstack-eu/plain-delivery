@@ -74,7 +74,7 @@ func readCommit(repo, sha string) (commit, error) {
 	}
 	paths := classifyRaw(raw)
 	for p, class := range paths {
-		if class != classCode || !isWorkflow(p) {
+		if class != classCode || !patchDecides(p) {
 			continue
 		}
 		patch, err := gitOutput(repo, "diff-tree", "--no-commit-id", "-p", "-U0", "--no-color", sha, "--", p)

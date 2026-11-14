@@ -105,18 +105,30 @@ var (
 	refSuffix  = regexp.MustCompile(`^[^\s#]+(?:\s+#.*)?$`)
 )
 
-// classifyPatch places a changed path in its class, where a workflow whose patch only moves `uses:` refs is a version pin, so other.
+// classifyPatch places a changed path in its class, where a workflow whose patch only moves `uses:` refs, or a Dockerfile whose patch only moves module versions, is a version pin, so other.
 func classifyPatch(p, patch string) pathClass {
 	class := classify(p, false)
-	if class == classCode && isWorkflow(p) && refOnlyBump(patch) {
+	if class != classCode {
+		return class
+	}
+	if (isWorkflow(p) && refOnlyBump(patch)) || (isDockerfile(p) && modulePinsOnly(patch)) {
 		return classOther
 	}
 	return class
 }
 
+// patchDecides reports whether a code path's patch can make it a version pin, so its patch is worth reading.
+func patchDecides(p string) bool {
+	return isWorkflow(p) || isDockerfile(p)
+}
+
 func isWorkflow(p string) bool {
 	ext := path.Ext(p)
 	return strings.HasPrefix(p, ".github/workflows/") && (ext == ".yml" || ext == ".yaml")
+}
+
+func isDockerfile(p string) bool {
+	return path.Base(p) == "Dockerfile"
 }
 
 // refOnlyBump reads a `git diff-tree -p -U0` patch and reports whether every hunk replaces uses: lines one for one, changing only the ref after "@" and its comment.
@@ -162,4 +174,53 @@ func sameUsesLine(old, new string) bool {
 	newPrefix, newRef, ok := strings.Cut(new, "@")
 	return ok && oldPrefix == newPrefix && usesPrefix.MatchString(oldPrefix) &&
 		refSuffix.MatchString(oldRef) && refSuffix.MatchString(newRef)
+}
+
+// modulePath and moduleVersion follow Go's module syntax, and lineEnd is the semicolon and backslash a RUN continuation line may end with.
+const (
+	modulePath    = `[A-Za-z0-9][A-Za-z0-9._~-]*(?:/[A-Za-z0-9._~-]+)*`
+	moduleVersion = `v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?`
+	modulePin     = modulePath + `@` + moduleVersion
+	lineEnd       = `[ \t]*;?[ \t]*\\?[ \t]*$`
+)
+
+var (
+	// replacePin is an xcaddy `--replace M=M@V` line, whose two module paths modulePinLine compares.
+	replacePin = regexp.MustCompile(`^[ \t]*--replace[ \t]+(` + modulePath + `)=(` + modulePath + `)@` + moduleVersion + lineEnd)
+	// goGetPins is a line of `go get` arguments, each a module at a version, optionally after `go get` itself.
+	goGetPins       = regexp.MustCompile(`^[ \t]*(?:go[ \t]+get[ \t]+)?` + modulePin + `(?:[ \t]+` + modulePin + `)*` + lineEnd)
+	dockerComment   = regexp.MustCompile(`^[ \t]*#`)
+	parserDirective = regexp.MustCompile(`^[ \t]*#[ \t]*[A-Za-z][A-Za-z0-9]*[ \t]*=`)
+)
+
+// modulePinsOnly reads a `git diff-tree -p -U0` patch and reports whether it changes at least one line and every added and removed line, judged on its own, passes modulePinLine.
+func modulePinsOnly(patch string) bool {
+	inHunk, changed := false, false
+	for _, line := range strings.Split(patch, "\n") {
+		switch {
+		case strings.HasPrefix(line, "@@"):
+			inHunk = true
+		case !inHunk, line == "", strings.HasPrefix(line, `\`):
+		case line[0] == '-' || line[0] == '+':
+			if !modulePinLine(line[1:]) {
+				return false
+			}
+			changed = true
+		default:
+			return false
+		}
+	}
+	return changed
+}
+
+// modulePinLine reports whether a Dockerfile line only names module versions or is a comment; a comment shaped like a parser directive stays code wherever it sits, since the patch alone cannot show whether it heads the file, where it changes how Docker reads it.
+func modulePinLine(line string) bool {
+	switch {
+	case parserDirective.MatchString(line):
+		return false
+	case dockerComment.MatchString(line), goGetPins.MatchString(line):
+		return true
+	}
+	m := replacePin.FindStringSubmatch(line)
+	return m != nil && m[1] == m[2]
 }
