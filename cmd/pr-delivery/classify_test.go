@@ -167,6 +167,8 @@ func TestClassifyPatch(t *testing.T) {
 			patchOf(edgeBuild, "@@ -28 +28,2 @@\n-      --replace github.com/go-jose/go-jose/v4=github.com/go-jose/go-jose/v4@v4.1.6\n+      --replace github.com/go-jose/go-jose/v4=github.com/go-jose/go-jose/v4@v4.1.6 \\\n+      --with github.com/porech/caddy-maxmind-geolocation@v1.0.1\n"), classCode},
 		{"text after a --replace version is code", edgeBuild,
 			patchOf(edgeBuild, "@@ -26 +26 @@\n-      --replace golang.org/x/net=golang.org/x/net@v0.61.0 \\\n+      --replace golang.org/x/net=golang.org/x/net@v0.62.0 && wget -qO /usr/bin/caddy https://example.com/caddy \\\n"), classCode},
+		{"a version word whose path has no dot in its first element, so names no Go module, is code", walgBuild,
+			patchOf(walgBuild, "@@ -30 +30 @@\n-      bash@v5.1.0 \\\n+      bash@v5.2.0 \\\n"), classCode},
 		{"text after a go get argument's version is code", walgBuild,
 			patchOf(walgBuild, "@@ -99 +99 @@\n-      go.opentelemetry.io/otel/sdk@v1.45.0 \\\n+      go.opentelemetry.io/otel/sdk@v1.47.0 && go env -w GOFLAGS=-mod=mod \\\n"), classCode},
 		{"a changed # syntax= parser directive is code", "api/Dockerfile",
