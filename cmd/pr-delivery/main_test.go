@@ -147,7 +147,6 @@ func appendLine(t *testing.T, path string) {
 	}
 }
 
-// fakeBoard answers the issue list route for the keys it holds, refusing a request without the board token, and counts its requests.
 func fakeBoard(t *testing.T, statuses map[string]string) (url string, requests *int) {
 	t.Helper()
 	requests = new(int)
