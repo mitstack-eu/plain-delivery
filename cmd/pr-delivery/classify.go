@@ -35,7 +35,7 @@ var classRules = []classRule{
 	{
 		class:    classOther,
 		prefixes: []string{"docs/", "product/", ".shared/", "blocks/pins/", "blocks/capability-pins/", "api/internal/seed/manifests/"},
-		exact:    []string{"LICENSE", "api/internal/seed/pins.yaml", "app/src/proto/fixtures/seededBlockFacts.json"},
+		exact:    []string{"LICENSE", ".gitmodules", "api/internal/seed/pins.yaml", "app/src/proto/fixtures/seededBlockFacts.json"},
 		basename: []string{"*.md", "go.mod", "go.sum", "package.json", "package-lock.json"},
 	},
 	{

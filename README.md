@@ -55,7 +55,7 @@ table in `cmd/pr-delivery/classify.go`.
 | Class | Examples |
 |---|---|
 | test | `*_test.go`, `*_test.sh`, `*.test.ts`, an OpenTofu test `*.tftest.hcl`, the `terraform.tfvars` that `tofu test` loads from a `tests/` directory, a Playwright spec under `app/e2e/`, anything under a `testdata/` directory |
-| other | Markdown, `docs/`, a block pin under `blocks/pins/`, a submodule pin, `go.mod`, `go.sum`, `package-lock.json`, a workflow change that only moves action versions, and a Dockerfile change that only moves module versions |
+| other | Markdown, `docs/`, a block pin under `blocks/pins/`, a submodule pin, the root `.gitmodules` file that lists the submodules, `go.mod`, `go.sum`, `package-lock.json`, a workflow change that only moves action versions, and a Dockerfile change that only moves module versions |
 | code | Every path the table does not name |
 
 A workflow under `.github/workflows/` is code, with one exception that
