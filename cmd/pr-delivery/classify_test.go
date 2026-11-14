@@ -37,6 +37,7 @@ func TestClassify(t *testing.T) {
 		{"a Go checksum file is other", "api/go.sum", false, classOther},
 		{"an npm lock file is other", "app/package-lock.json", false, classOther},
 		{"a submodule pin is other", "platform", true, classOther},
+		{"the submodule list is other when no gitlink changes with it", ".gitmodules", false, classOther},
 		{"a Python suite is a test", "scripts/thing_test.py", false, classTest},
 		{"a JavaScript test is a test", "app/src/thing.test.js", false, classTest},
 		{"a JSX test is a test", "app/src/thing.test.jsx", false, classTest},
