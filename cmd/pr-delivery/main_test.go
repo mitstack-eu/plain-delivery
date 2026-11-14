@@ -206,15 +206,9 @@ func TestRun(t *testing.T) {
 	}
 	caddyBefore := caddyBuild("# go-jose is a dependency rather than an xcaddy plugin, so xcaddy\n# moves it through --replace.\n", joseRepl)
 	caddyAfter := caddyBuild("# go-jose and OpenTelemetry are dependencies rather than xcaddy\n# plugins, so xcaddy moves each\n# through --replace.\n", joseRepl, otelRepl)
-	pinsBefore := map[string]string{
-		caddyfile: caddyBefore,
-		walgfile:  walgBuild("# go get raises the OpenTelemetry SDK to its fixed version.\n", "      go.opentelemetry.io/otel/sdk@v1.45.0", joseGet),
-	}
-	pinsAfter := map[string]string{
-		caddyfile: caddyAfter,
-		walgfile: walgBuild("# go get raises OpenTelemetry's SDK and trace modules to their\n# fixed version.\n",
-			"      go.opentelemetry.io/otel/sdk@v1.47.0", "      go.opentelemetry.io/otel/trace@v1.47.0", joseGet),
-	}
+	walgBefore := walgBuild("# go get raises the OpenTelemetry SDK to its fixed version.\n", "      go.opentelemetry.io/otel/sdk@v1.45.0", joseGet)
+	walgAfter := walgBuild("# go get raises OpenTelemetry's SDK and trace modules to their\n# fixed version.\n",
+		"      go.opentelemetry.io/otel/sdk@v1.47.0", "      go.opentelemetry.io/otel/trace@v1.47.0", joseGet)
 	caddyReworded := caddyBuild("# go-jose and OpenTelemetry are dependencies rather than xcaddy\n# plugins, so xcaddy raises each\n# through --replace.\n", joseRepl, otelRepl)
 	caddyRunChanged := strings.Replace(caddyAfter, "/usr/bin/caddy", "/usr/local/bin/caddy", 1)
 	cases := []struct {
@@ -353,8 +347,8 @@ func TestRun(t *testing.T) {
 			"pr-delivery: the title names no board key"},
 		{"a person's Dockerfile patches moving only module versions and comments, then a comment-only commit, pass with no test commit", "MIT-12: take OpenTelemetry 1.47.0", "",
 			[]step{
-				{paths: []string{caddyfile, walgfile}, content: pinsBefore, seed: true},
-				{paths: []string{caddyfile, walgfile}, content: pinsAfter},
+				{paths: []string{caddyfile, walgfile}, content: map[string]string{caddyfile: caddyBefore, walgfile: walgBefore}, seed: true},
+				{paths: []string{caddyfile, walgfile}, content: map[string]string{caddyfile: caddyAfter, walgfile: walgAfter}},
 				{paths: []string{caddyfile}, content: map[string]string{caddyfile: caddyReworded}},
 			}, inProgress, 0,
 			"pr-delivery: 2 commit(s) judged: the tests came first and every key is claimed"},

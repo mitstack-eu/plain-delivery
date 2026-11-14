@@ -104,7 +104,6 @@ func TestClassifyPatch(t *testing.T) {
 		edgeBuild = "deploy/caddy/Dockerfile"
 		walgBuild = "deploy/wal-shipper/Dockerfile"
 	)
-	// caddyPins has the shape of the OpenTelemetry move in the edge build: a reflowed comment, then --replace lines added after the last one, which gains its trailing backslash.
 	caddyPins := "@@ -13,2 +13,3 @@\n" +
 		"-# chi and go-jose are dependencies rather than xcaddy plugins, so xcaddy moves\n" +
 		"-# each through --replace; --with would fail to import them.\n" +
@@ -116,17 +115,6 @@ func TestClassifyPatch(t *testing.T) {
 		"+      --replace github.com/go-jose/go-jose/v4=github.com/go-jose/go-jose/v4@v4.1.6 \\\n" +
 		"+      --replace go.opentelemetry.io/otel=go.opentelemetry.io/otel@v1.47.0 \\\n" +
 		"+      --replace go.opentelemetry.io/otel/sdk/log=go.opentelemetry.io/otel/sdk/log@v1.47.0\n"
-	// walgPins has the shape of the same move in the wal-shipper build: a reflowed comment and a moved go get argument with another added beside it.
-	walgPins := "@@ -92,2 +92,3 @@ RUN set -eux; \\\n" +
-		"-# wal-g's own go.mod requires the OpenTelemetry SDK and go-jose below the version\n" +
-		"-# that fixes an advisory in each, so go get raises each to it.\n" +
-		"+# wal-g's own go.mod requires OpenTelemetry's SDK and trace modules and go-jose\n" +
-		"+# below the version that fixes an advisory in each, so go get raises\n" +
-		"+# each to it.\n" +
-		"@@ -99 +100,2 @@ RUN set -eux; \\\n" +
-		"-      go.opentelemetry.io/otel/sdk@v1.45.0 \\\n" +
-		"+      go.opentelemetry.io/otel/sdk@v1.47.0 \\\n" +
-		"+      go.opentelemetry.io/otel/trace@v1.47.0 \\\n"
 	cases := []struct {
 		name, path, patch string
 		want              pathClass
@@ -165,12 +153,8 @@ func TestClassifyPatch(t *testing.T) {
 			patchOf("scripts/ci.yml", checkoutBump), classCode},
 		{"a ref-only bump of a test path keeps it a test", "scripts/test/fixtures/required-checks/pipeline.yml",
 			patchOf("scripts/test/fixtures/required-checks/pipeline.yml", checkoutBump), classTest},
-		{"the edge build's patch reflowing a comment and adding --replace lines after one that gains its backslash is other", edgeBuild,
+		{"a --replace added after the last line of an xcaddy build, so the line before it gains a trailing backslash, beside a reflowed comment, is other", edgeBuild,
 			patchOf(edgeBuild, caddyPins), classOther},
-		{"the wal-shipper build's patch reflowing a comment and moving a go get argument is other", walgBuild,
-			patchOf(walgBuild, walgPins), classOther},
-		{"a --replace added after the last line of an xcaddy build, so the line before it gains a trailing backslash, is other", edgeBuild,
-			patchOf(edgeBuild, "@@ -28 +28,2 @@\n-      --replace github.com/go-chi/chi/v5=github.com/go-chi/chi/v5@v5.4.0\n+      --replace github.com/go-chi/chi/v5=github.com/go-chi/chi/v5@v5.4.0 \\\n+      --replace golang.org/x/net=golang.org/x/net@v0.62.0\n"), classOther},
 		{"a go get argument moved and another added beside it, the last one ending in a semicolon, is other", walgBuild,
 			patchOf(walgBuild, "@@ -99 +99,2 @@\n-      go.opentelemetry.io/otel/sdk@v1.45.0; \\\n+      go.opentelemetry.io/otel/sdk@v1.47.0 \\\n+      go.opentelemetry.io/otel/trace@v1.47.0; \\\n"), classOther},
 		{"a go get line naming its arguments after go get itself is other", walgBuild,
