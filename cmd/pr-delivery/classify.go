@@ -117,7 +117,6 @@ func classifyPatch(p, patch string) pathClass {
 	return class
 }
 
-// patchDecides reports whether a code path's patch can make it a version pin, so its patch is worth reading.
 func patchDecides(p string) bool {
 	return isWorkflow(p) || isDockerfile(p)
 }
