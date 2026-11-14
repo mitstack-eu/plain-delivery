@@ -99,7 +99,6 @@ func newRange(t *testing.T, steps []step) (dir, base string, shas []string) {
 	return dir, base, shas
 }
 
-// stagePaths writes each of the step's paths, with its content when it names one, and stages them.
 func stagePaths(t *testing.T, dir string, s step) {
 	t.Helper()
 	for _, p := range s.paths {
@@ -127,7 +126,6 @@ func commitPaths(t *testing.T, dir, subject string, tick int, paths ...string) s
 	return runGit(t, dir, "rev-parse", "HEAD")
 }
 
-// runClaimed runs the check as a person whose title names an issue that is In Progress on the board.
 func runClaimed(t *testing.T, dir, base, head string) (code int, out string) {
 	t.Helper()
 	url, _ := fakeBoard(t, map[string]string{"MIT-12": "In Progress"})
