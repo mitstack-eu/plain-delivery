@@ -54,7 +54,6 @@ func runGitEnv(t *testing.T, dir string, env []string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-// newRange commits a seed holding each seed step's files and then each other step, returning the directory, the seed sha and each step's sha.
 func newRange(t *testing.T, steps []step) (dir, base string, shas []string) {
 	t.Helper()
 	dir = t.TempDir()
