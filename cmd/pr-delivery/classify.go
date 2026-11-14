@@ -105,7 +105,7 @@ var (
 	refSuffix  = regexp.MustCompile(`^[^\s#]+(?:\s+#.*)?$`)
 )
 
-// classifyPatch places a changed path in its class, where a workflow whose patch only moves `uses:` refs, or a Dockerfile whose patch only moves module versions, is a version pin, so other.
+// classifyPatch places a changed path in its class, where a workflow whose patch only moves `uses:` refs, or a Dockerfile whose patch only moves module versions or comments, is a version pin, so other.
 func classifyPatch(p, patch string) pathClass {
 	class := classify(p, false)
 	if class != classCode {
@@ -175,7 +175,7 @@ func sameUsesLine(old, new string) bool {
 		refSuffix.MatchString(oldRef) && refSuffix.MatchString(newRef)
 }
 
-// modulePath and moduleVersion follow Go's module syntax, and lineEnd is the semicolon and backslash a RUN continuation line may end with.
+// A pin needs a full semver tag, so a floating ref such as `@latest` never counts, and lineEnd allows a trailing `;`, `\`, or both in that order.
 const (
 	modulePath    = `[A-Za-z0-9][A-Za-z0-9._~-]*(?:/[A-Za-z0-9._~-]+)*`
 	moduleVersion = `v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?`
@@ -186,8 +186,7 @@ const (
 var (
 	// replacePin is an xcaddy `--replace M=M@V` line, whose two module paths modulePinLine compares.
 	replacePin = regexp.MustCompile(`^[ \t]*--replace[ \t]+(` + modulePath + `)=(` + modulePath + `)@` + moduleVersion + lineEnd)
-	// goGetPins is a line of `go get` arguments, each a module at a version, optionally after `go get` itself.
-	goGetPins       = regexp.MustCompile(`^[ \t]*(?:go[ \t]+get[ \t]+)?` + modulePin + `(?:[ \t]+` + modulePin + `)*` + lineEnd)
+	goGetPins      = regexp.MustCompile(`^[ \t]*(?:go[ \t]+get[ \t]+)?` + modulePin + `(?:[ \t]+` + modulePin + `)*` + lineEnd)
 	dockerComment   = regexp.MustCompile(`^[ \t]*#`)
 	parserDirective = regexp.MustCompile(`^[ \t]*#[ \t]*[A-Za-z][A-Za-z0-9]*[ \t]*=`)
 )
