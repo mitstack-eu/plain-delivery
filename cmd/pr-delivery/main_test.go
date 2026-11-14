@@ -215,6 +215,7 @@ func TestRun(t *testing.T) {
 		walgfile: walgBuild("# go get raises OpenTelemetry's SDK and trace modules to their\n# fixed version.\n",
 			"      go.opentelemetry.io/otel/sdk@v1.47.0", "      go.opentelemetry.io/otel/trace@v1.47.0", joseGet),
 	}
+	caddyReworded := caddyBuild("# go-jose and OpenTelemetry are dependencies rather than xcaddy\n# plugins, so xcaddy raises each\n# through --replace.\n", joseRepl, otelRepl)
 	caddyRunChanged := strings.Replace(caddyAfter, "/usr/bin/caddy", "/usr/local/bin/caddy", 1)
 	cases := []struct {
 		name, title, author string
@@ -350,12 +351,13 @@ func TestRun(t *testing.T) {
 		{"a person fails without a key", "chore: bump platform submodule", "octocat",
 			[]step{{paths: []string{"platform"}, subject: "chore: bump platform submodule", gitlink: true}}, nil, 1,
 			"pr-delivery: the title names no board key"},
-		{"a person's Dockerfile patches moving only module versions and comments pass with no test commit", "MIT-12: take OpenTelemetry 1.47.0", "",
+		{"a person's Dockerfile patches moving only module versions and comments, then a comment-only commit, pass with no test commit", "MIT-12: take OpenTelemetry 1.47.0", "",
 			[]step{
 				{paths: []string{caddyfile, walgfile}, content: pinsBefore, seed: true},
 				{paths: []string{caddyfile, walgfile}, content: pinsAfter},
+				{paths: []string{caddyfile}, content: map[string]string{caddyfile: caddyReworded}},
 			}, inProgress, 0,
-			"pr-delivery: 1 commit(s) judged: the tests came first and every key is claimed"},
+			"pr-delivery: 2 commit(s) judged: the tests came first and every key is claimed"},
 		{"a Dockerfile patch moving a module version and changing a RUN line, with no test, fails as code with no test", "MIT-12: take OpenTelemetry 1.47.0", "",
 			[]step{
 				{paths: []string{caddyfile}, content: map[string]string{caddyfile: caddyBefore}, seed: true},
