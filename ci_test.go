@@ -62,3 +62,16 @@ func TestCI_GatesPullRequestsAndRecordsDeliveriesWithThisRepositorysOwnCommands(
 		}
 	}
 }
+
+func TestCI_EveryJobRunsOnGitHubsHostedUbuntuRunner(t *testing.T) {
+	jobs := ciJobs(t)
+
+	if len(jobs) == 0 {
+		t.Fatal("ci.yml holds no job, so no runner was checked")
+	}
+	for id, job := range jobs {
+		if !strings.Contains(job+"\n", "\nruns-on: ubuntu-latest\n") {
+			t.Errorf("the %s job runs on no ubuntu-latest, the hosted runner GitHub gives a public repository for free", id)
+		}
+	}
+}

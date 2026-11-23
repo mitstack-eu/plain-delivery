@@ -11,10 +11,11 @@ on:
 permissions:
   contents: read
 
+# Every job runs on GitHub's hosted ubuntu-latest, which is free for a public repository.
 jobs:
   test:
     name: test
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["ubicloud-standard-2"]') }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -28,7 +29,7 @@ jobs:
   pr-key-gate:
     name: pr key gate
     if: github.event_name == 'pull_request'
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["ubicloud-standard-2"]') }}
+    runs-on: ubuntu-latest
     steps:
       # The base..head range needs history a shallow checkout has not.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -50,7 +51,7 @@ jobs:
     name: record delivery
     needs: test
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
-    runs-on: ${{ fromJSON(vars.CI_RUNS_ON || '["ubicloud-standard-2"]') }}
+    runs-on: ubuntu-latest
     # It pushes the board-synced anchor tag it advances, with the credential the checkout keeps.
     permissions:
       contents: write
