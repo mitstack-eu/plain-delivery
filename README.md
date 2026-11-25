@@ -3,16 +3,20 @@
 This repository holds the commands that connect mitstack's repositories to
 the board, Plain, the work tracker where every piece of work is an issue with
 a key such as `MIT-123`. Two commands judge a pull request before it merges,
-and a third records on the board which issues a push to `main` delivered. This
-page is for the mitstack engineer who maintains those commands or the CI that
-runs them.
+and a third records on the board which issues a push to `main` delivered. A
+fourth names the layer a repository belongs to, which is the part of
+mitstack that owns its changes, such as the core platform or a builder's
+block. This page is for the mitstack engineer who maintains those commands or
+the CI that runs them.
 
 | Path | What it does |
 |---|---|
 | `cmd/pr-keys` | Fails a pull request unless at least one of its commits and its title each name a board key |
 | `cmd/pr-delivery` | Fails a pull request whose code lands before its tests, or whose keys are not issues claimed on the board |
 | `cmd/board-delivery` | Records once, on the board's `/v1/delivered` endpoint, the keys a push to `main` delivered |
+| `cmd/repo-layer` | Prints the layer a repository belongs to, and the table row or manifest line it read that from |
 | `boardkeys` | Derives which keys a commit subject or body delivers, and which it only references |
+| `layer` | Holds the one rule that places a repository in its layer |
 
 ## How a key counts
 
@@ -176,6 +180,48 @@ the command prints has that token redacted.
 The runbook `docs/kit-delivery-recorder-credential.md` in
 mitstack-eu/mitstack-workspace, a repository private to mitstack, says where
 those two values come from and how the token is rotated.
+
+## How a repository's layer is named
+
+Every mitstack repository belongs to one layer, and a board issue and its
+pull request change files of one layer only. The five layers are `core`,
+`kit`, `block`, `capability` and `internal`. The `layer` entry of
+`docs/glossary.md` in mitstack-eu/mitstack-workspace defines each one, and
+this page restates none of it. The `layer` package is the one place that says
+which layer a repository takes, and `repo-layer` prints that answer for a
+script, such as `scripts/change-layer.sh` in mitstack-eu/mitstack-workspace.
+That script calls the command, and no job in this repository's CI runs it.
+
+`layer.Of` in `layer/layer.go` answers once per repository, in this order:
+
+1. A `mitstack-eu` repository named in the `repositories` table, a variable
+   in `layer/layer.go`, takes the layer its row gives. The table holds
+   mitstack's own core, kits and internal tooling.
+2. Any other repository takes `block` or `capability` from the first
+   unindented `type:` line of its root `manifest.yaml`. An indented `type:`
+   deeper in the file belongs to a nested field and does not count.
+3. Every other repository is unplaced, and the answer names it and the
+   reason.
+
+For a repository named in the table, the manifest is read only to catch a
+conflict. One whose manifest says `type: block` or `type: capability` is
+unplaced, because one repository cannot hold two layers.
+
+The command prints one line, which starts with the layer and a colon:
+
+```sh
+go run ./cmd/repo-layer --repository mitstack-eu/block-kit
+# kit: mitstack-eu/block-kit is listed as kit in plain-delivery's layer table
+
+go run ./cmd/repo-layer --repository mitstack-eu/hcloud-docker-host --manifest ../hcloud-docker-host/manifest.yaml
+# capability: mitstack-eu/hcloud-docker-host's manifest.yaml says type: capability
+```
+
+An unplaced repository prints a line starting `unplaced:` and exits 1, and so
+does a `--manifest` file the command cannot read. A missing `--repository`,
+or one not written as `owner/name`, exits 2. The command opens no network
+connection, so the caller passes the manifest it read, from a checkout or
+from GitHub at a fixed commit.
 
 ## How a repository runs the commands
 
