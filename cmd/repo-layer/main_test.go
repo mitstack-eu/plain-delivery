@@ -28,7 +28,7 @@ func TestRun(t *testing.T) {
 	}{
 		{"a table repository prints its layer and the table as source", []string{"--repository", "mitstack-eu/talos-cluster-kit"}, 0, "kit", "layer table"},
 		{"a capability's manifest prints capability and the manifest as source", []string{"--repository", "mitstack-eu/hcloud-docker-host", "--manifest", capability}, 0, "capability", "manifest.yaml says type: capability"},
-		{"an unplaced repository exits one naming it", []string{"--repository", "mitstack-eu/management"}, 1, "unplaced", "mitstack-eu/management"},
+		{"an unplaced repository exits one naming it", []string{"--repository", "mitstack-eu/unlisted-tool"}, 1, "unplaced", "mitstack-eu/unlisted-tool"},
 		{"an unreadable manifest exits one naming the file", []string{"--repository", "mitstack-eu/x", "--manifest", "/nonexistent/manifest.yaml"}, 1, "repo-layer", "/nonexistent/manifest.yaml"},
 		{"a missing --repository exits two", nil, 2, "repo-layer", "--repository is required"},
 		{"a repository without an owner exits two", []string{"--repository", "block-kit"}, 2, "repo-layer", "block-kit"},
