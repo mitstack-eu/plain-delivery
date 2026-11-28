@@ -23,34 +23,36 @@ const owner = "mitstack-eu"
 
 // A block names its own layer in its manifest, so the table lists only the core, kit and internal repositories.
 var repositories = map[string]Name{
-	"mitstack":               Core,
-	"mitstack-plugins":       Core,
-	"block-kit":              Kit,
-	"opentofu-operator":      Kit,
-	"talos-cluster-kit":      Kit,
-	"k3s-cluster-kit":        Kit,
-	"cluster-bases":          Kit,
-	"operator-kit":           Kit,
-	"operator-kit-archive":   Kit,
-	"operator-sidecar":       Kit,
-	"mitstack-workspace":     Internal,
-	"plain":                  Internal,
-	"plain-delivery":         Internal,
-	"home-infra":             Internal,
-	"home":                   Internal,
-	"webshop-starter":        Internal,
-	"alpha-site-preview":     Internal,
-	"mitstack-home-gitops":   Internal,
-	"management":             Internal,
-	"plain-ci":               Internal,
-	"plain-cd":               Internal,
-	"home-ci":                Internal,
-	"scratch-proof-1118b-ci": Internal,
-	"mitstack-home-cluster":  Internal,
-	"cost-model":             Internal,
-	"workplace-shop":         Internal,
-	"workplace-desk":         Internal,
+	"mitstack":              Core,
+	"mitstack-plugins":      Core,
+	"block-kit":             Kit,
+	"opentofu-operator":     Kit,
+	"talos-cluster-kit":     Kit,
+	"k3s-cluster-kit":       Kit,
+	"cluster-bases":         Kit,
+	"operator-kit":          Kit,
+	"operator-kit-archive":  Kit,
+	"operator-sidecar":      Kit,
+	"mitstack-workspace":    Internal,
+	"plain":                 Internal,
+	"plain-delivery":        Internal,
+	"home-infra":            Internal,
+	"home":                  Internal,
+	"webshop-starter":       Internal,
+	"alpha-site-preview":    Internal,
+	"mitstack-home-gitops":  Internal,
+	"management":            Internal,
+	"plain-ci":              Internal,
+	"plain-cd":              Internal,
+	"home-ci":               Internal,
+	"mitstack-home-cluster": Internal,
+	"cost-model":            Internal,
+	"workplace-shop":        Internal,
+	"workplace-desk":        Internal,
 }
+
+// Every scratch proof app mitstack creates for itself, and its -ci and -cd repositories, is named with this prefix, so one rule places them all.
+const scratchPrefix = "scratch-"
 
 // manifestLayers are the manifest type words that are a layer themselves.
 var manifestLayers = map[string]Name{string(Block): Block, string(Capability): Capability}
@@ -74,8 +76,10 @@ func Of(repo string, manifest []byte) (Verdict, error) {
 		return Verdict{}, fmt.Errorf("%w, and %q is not", ErrRepositoryName, repo)
 	}
 	typ, hasType := manifestType(manifest)
-	if listed, ok := repositories[name]; ok && org == owner {
-		return tableVerdict(repo, listed, typ)
+	if org == owner {
+		if listed, rule, ok := tableRule(name); ok {
+			return tableVerdict(repo, listed, rule, typ)
+		}
 	}
 	if manifest == nil {
 		return Verdict{}, fmt.Errorf("%w: %s is in no row of plain-delivery's layer table and has no manifest.yaml", ErrUnplaced, repo)
@@ -90,12 +94,23 @@ func Of(repo string, manifest []byte) (Verdict, error) {
 	return Verdict{Layer: layer, Source: fmt.Sprintf("%s's manifest.yaml says type: %s", repo, typ)}, nil
 }
 
+// tableRule returns the layer the table gives an owner repository's name and the words saying why, a named row winning over the scratch rule.
+func tableRule(name string) (Name, string, bool) {
+	if listed, ok := repositories[name]; ok {
+		return listed, fmt.Sprintf("is listed as %s in plain-delivery's layer table", listed), true
+	}
+	if strings.HasPrefix(name, scratchPrefix) {
+		return Internal, fmt.Sprintf("has a name starting %s, which plain-delivery's layer table places as %s", scratchPrefix, Internal), true
+	}
+	return "", "", false
+}
+
 // tableVerdict places a table repository, refusing one whose manifest says block or capability, since a repository belongs to one layer.
-func tableVerdict(repo string, listed Name, manifestTyp string) (Verdict, error) {
+func tableVerdict(repo string, listed Name, rule, manifestTyp string) (Verdict, error) {
 	if _, claimsBlock := manifestLayers[manifestTyp]; claimsBlock {
 		return Verdict{}, fmt.Errorf("%w: %s is %s in plain-delivery's layer table, yet its manifest.yaml says type: %s", ErrUnplaced, repo, listed, manifestTyp)
 	}
-	return Verdict{Layer: listed, Source: fmt.Sprintf("%s is listed as %s in plain-delivery's layer table", repo, listed)}, nil
+	return Verdict{Layer: listed, Source: fmt.Sprintf("%s %s", repo, rule)}, nil
 }
 
 // Only an unindented type: line counts, since a nested type: belongs to another field.

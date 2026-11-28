@@ -197,21 +197,30 @@ That script calls the command, and no job in this repository's CI runs it.
 1. A `mitstack-eu` repository named in the `repositories` table, a variable
    in `layer/layer.go`, takes the layer its row gives. The table holds
    mitstack's own core, kits and internal tooling.
-2. Any other repository takes `block` or `capability` from the first
+2. A `mitstack-eu` repository whose name starts `scratch-`, and which no row
+   names, takes `internal` from the table's scratch rule, held in
+   `scratchPrefix`. mitstack names each scratch proof app it creates for
+   itself, and that app's `-ci` and `-cd` repositories, this way, so none
+   needs a row of its own and none leaves one behind once the app is deleted.
+3. Any other repository takes `block` or `capability` from the first
    unindented `type:` line of its root `manifest.yaml`. An indented `type:`
    deeper in the file belongs to a nested field and does not count.
-3. Every other repository is unplaced, and the answer names it and the
+4. Every other repository is unplaced, and the answer names it and the
    reason.
 
-For a repository named in the table, the manifest is read only to catch a
-conflict. One whose manifest says `type: block` or `type: capability` is
-unplaced, because one repository cannot hold two layers.
+For a repository the table places, by a row or by the scratch rule, the
+manifest is read only to catch a conflict. One whose manifest says
+`type: block` or `type: capability` is unplaced, because one repository
+cannot hold two layers.
 
 The command prints one line, which starts with the layer and a colon:
 
 ```sh
 go run ./cmd/repo-layer --repository mitstack-eu/block-kit
 # kit: mitstack-eu/block-kit is listed as kit in plain-delivery's layer table
+
+go run ./cmd/repo-layer --repository mitstack-eu/scratch-6396-health
+# internal: mitstack-eu/scratch-6396-health has a name starting scratch-, which plain-delivery's layer table places as internal
 
 go run ./cmd/repo-layer --repository mitstack-eu/hcloud-docker-host --manifest ../hcloud-docker-host/manifest.yaml
 # capability: mitstack-eu/hcloud-docker-host's manifest.yaml says type: capability
