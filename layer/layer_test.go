@@ -34,6 +34,16 @@ func TestOf_OwnerRuledRepositoriesTakeTheirTableLayer(t *testing.T) {
 	}
 }
 
+func TestOf_OwnerScratchRepositoriesTakeInternalFromTheTableRule(t *testing.T) {
+	for _, repo := range []string{"mitstack-eu/scratch-6396-health", "mitstack-eu/scratch-6396-health-ci", "mitstack-eu/scratch-6396-health-cd"} {
+		got, err := layer.Of(repo, nil)
+
+		if err != nil || got.Layer != layer.Internal || !strings.Contains(got.Source, "scratch-") || !strings.Contains(got.Source, "layer table") {
+			t.Errorf("Of(%q, nil) = %+v, %v; want internal from the layer table's scratch- rule", repo, got, err)
+		}
+	}
+}
+
 func TestOf_ManifestTypeLine(t *testing.T) {
 	cases := []struct {
 		name, manifest string
@@ -67,6 +77,8 @@ func TestOf_Refusals(t *testing.T) {
 		{"a manifest with no top-level type line is unplaced", "mitstack-eu/odd", []byte("spec:\n  type: block\n"), layer.ErrUnplaced, []string{"no top-level type: line"}},
 		{"a table repository whose manifest names a block type is unplaced", "mitstack-eu/block-kit", []byte("type: block\n"), layer.ErrUnplaced, []string{"kit", "type: block"}},
 		{"another owner's repository named like a table row reads only its manifest", "someone/block-kit", nil, layer.ErrUnplaced, []string{"someone/block-kit"}},
+		{"a scratch- repository whose manifest names a block type is unplaced", "mitstack-eu/scratch-x", []byte("type: block\n"), layer.ErrUnplaced, []string{"mitstack-eu/scratch-x", "layer table", "type: block"}},
+		{"another owner's scratch- repository with no manifest is unplaced", "someone/scratch-x", nil, layer.ErrUnplaced, []string{"someone/scratch-x", "no manifest.yaml"}},
 		{"a name without an owner is refused", "block-kit", nil, layer.ErrRepositoryName, []string{"block-kit"}},
 		{"a name with two slashes is refused", "a/b/c", nil, layer.ErrRepositoryName, []string{"a/b/c"}},
 	}
